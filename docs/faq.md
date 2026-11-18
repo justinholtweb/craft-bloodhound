@@ -25,6 +25,12 @@ zero-downtime rebuilds.
 
 In Craft 6, `.orderBy('score')` sorts ascending. Use `.orderBy('score desc')`.
 
+## Does it work with GraphQL?
+
+Yes, in both editions. Lite and Pro add a `bloodhoundSearch` query; each index is a permission in
+the GraphQL schema editor, and results only include elements the schema can read. On Pro, GraphQL's
+own `search:` argument is answered by your engine as well. See [GraphQL](graphql).
+
 ## Which engines does it support?
 
 Meilisearch and Typesense, configured for you, including index health. Algolia should work but

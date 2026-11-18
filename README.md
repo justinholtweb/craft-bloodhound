@@ -68,6 +68,18 @@ and alt text). URLs and handles aren't searched, on any engine. If a Typesense i
 If the engine is unreachable, results are empty and `results.error` holds a generic message (details go
 to the log), and the page still renders.
 
+## GraphQL
+
+Lite and Pro add a `bloodhoundSearch` query for headless sites:
+
+```graphql
+{ bloodhoundSearch(index: "articles", query: "lantern") { total elements { id title ... on EntryInterface { url } } } }
+```
+
+Each index is a permission in the GraphQL schema editor, and hits are limited to elements the
+schema can read. On Pro, GraphQL's own `search:` argument is answered by the engine too. See
+`docs/graphql.md`.
+
 ## Pro: Craft's search, synonyms, zero-downtime rebuilds
 
 - **Craft's own `.search()` answered by the engine** (`replaceCraftSearch`). A front-end query is handed to the
@@ -87,8 +99,8 @@ to the log), and the page still renders.
 | | Lite | Pro |
 | --- | --- | --- |
 | Price | Free | $49 |
-| Indexes, sync, Twig + Blade search, Meilisearch + Typesense, index health | ✓ | ✓ |
-| Craft's `.search()` from the engine, synonyms, stop words, zero-downtime rebuilds | | ✓ |
+| Indexes, sync, Twig + Blade + GraphQL search, Meilisearch + Typesense, index health | ✓ | ✓ |
+| Craft's `.search()` (templates and GraphQL) from the engine, synonyms, stop words, zero-downtime rebuilds | | ✓ |
 
 ## Development
 

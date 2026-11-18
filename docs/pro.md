@@ -26,6 +26,9 @@ with **no template changes**:
 > **Tip: sort by `score desc`.** In Craft 6, `.orderBy('score')` sorts ascending — least relevant
 > first. Use `orderBy('score desc')` to get the best matches at the top.
 
+This covers GraphQL too: the `search:` argument on `entries`, `assets`, `users` and `products`
+queries goes through the same takeover (see [GraphQL](graphql)).
+
 Bloodhound only answers a query it can answer completely. It falls back to Craft's built-in search
 when:
 

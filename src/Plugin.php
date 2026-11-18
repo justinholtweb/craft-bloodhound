@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace JustinHoltWeb\Bloodhound;
 
+use CraftCms\Cms\Gql\Events\GqlSchemaComponentsResolving;
+use CraftCms\Cms\Gql\GqlQueries;
 use CraftCms\Cms\Plugin\Events\PluginSettingsSaved;
 use CraftCms\Cms\Plugin\Plugin as BasePlugin;
 use CraftCms\Cms\Search\Search as CraftSearchService;
@@ -46,6 +48,7 @@ class Plugin extends BasePlugin
 
     protected array $events = [
         TemplateGlobalsResolving::class => Listeners\RegisterTemplateApi::class,
+        GqlSchemaComponentsResolving::class => Listeners\RegisterGqlComponents::class,
         PluginSettingsSaved::class => Listeners\PushEngineSettings::class,
     ];
 
@@ -74,6 +77,8 @@ class Plugin extends BasePlugin
         // One listener per request/job, so a product save and its variants' saves sync once.
         $this->app->scoped(Listeners\SyncOnElementChange::class);
         Event::subscribe(Listeners\SyncOnElementChange::class);
+        // GraphQL `bloodhoundSearch`, Lite and Pro.
+        $this->app->make(GqlQueries::class)->register(Gql\SearchQuery::class);
 
         if ($this->is(self::EDITION_PRO)) {
             // Pro: Craft's `.search()` can be answered by the engine (setting `replaceCraftSearch`).

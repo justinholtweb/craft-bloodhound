@@ -78,6 +78,16 @@ engine works unchanged.
   enabled; `tests/Harness/commerce-fixtures.php` seeds `gear`/`books` types and four products. With Commerce:
   file engine 91, Meilisearch 110, Typesense 115 (+2 CP 500s from Commerce dev's unbuilt Vite assets —
   environment). On beta.1 without Commerce: 79 / 95 / 100, all green.
+- **2026-11-18 — GraphQL (Lite and Pro).** `Gql\SearchQuery` registered via `GqlQueries::register()`;
+  `bloodhoundSearch(index, query, site, page, perPage, where)` → `BloodhoundSearchResults` with
+  `elements: [ElementInterface]`. Permission per index: schema component `bloodhound.{handle}:read`
+  (`GqlSchemaComponentsResolving`); no component → query absent; unknown and disallowed indexes give the same
+  error. Hits are filtered through Craft's/Commerce's own GraphQL resolvers (`Entry/Asset/User/Product
+  ::prepareQuery(null, [])`, all public) so section/volume/group/product-type scope and token-user `editable()`
+  apply. `total` counts the whole index (documented). Settings save invalidates GraphQL caches. Pro's
+  `CraftSearch` takeover already covers GraphQL `search:` (verified incl. `orderBy: "score desc"`;
+  `searchTermOptions` turns search into an array → Craft). Harness: `gql-fixtures.php` (3 schemas/tokens,
+  cleaned up at the end); with Commerce, products over GraphQL verified too. 114 / 119 / 97 green on beta.1.
 - Open: Algolia (needs a paid account to verify). - **2026-11-18 — Scout `database` driver tested and dropped.** `DatabaseEngine::update()` stores nothing
   and searches query the model's own table (`search_documents`, which doesn't exist): import reported
   "3 documents", every search failed. `CollectionEngine` works the same way. `SearchDocument::engine()` now

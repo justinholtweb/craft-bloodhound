@@ -161,6 +161,36 @@ ok "users: joining the group adds them" "$(person adal1815 'Ada Lovelace' staff 
 ok "users: a renamed user is found by the new name" "$(person ghopper 'Grace Brewster' staff >/dev/null; settle; fids find people brewster)" "$GRACE "
 person ghopper 'Grace Hopper' staff >/dev/null
 
+# ---- GraphQL (Lite and Pro): `bloodhoundSearch` ----
+cp "$SRC"/gql-fixtures.php "$H/storage/bh-gql-fixtures.php"
+tk "require 'storage/bh-gql-fixtures.php';" >/dev/null
+# gq <schema> <query> <python expression over the response `r`>
+gq() { curl -sk -H "Authorization: Bearer $(printf 'bh%s' "$1" | awk '{ s=$0; while (length(s) < 32) s=s "0"; print s }')" -H 'Content-Type: application/json' \
+  --data "$(python3 -c 'import json,sys; print(json.dumps({"query": sys.argv[1]}))' "$2")" "$U/actions/graphql/api" \
+  | python3 -c 'import json,sys
+try: r=json.load(sys.stdin)
+except Exception: print("not json"); sys.exit()
+if r.get("errors"): print("ERR:" + "; ".join(e.get("message","") for e in r["errors"])); sys.exit()
+d=r.get("data") or {}; b=d.get("bloodhoundSearch") or {}; j=lambda *v: "/".join(str(x) for x in v)
+print(eval(sys.argv[1]))' "$3"; }
+# In expressions: r = response, d = data, b = data.bloodhoundSearch, j(a, b, …) = "a/b/…"
+ids_of='",".join(e["id"] for e in r["data"]["bloodhoundSearch"]["elements"])'
+ok "gql: search returns live entries in rank order (same as Twig)" "$(gq full '{ bloodhoundSearch(index: "articles", query: "momentum") { elements { id } } }' "$ids_of")" "$(ids twig momentum)"
+ok "gql: element fields through fragments" "$(gq full '{ bloodhoundSearch(index: "articles", query: "momentum") { elements { ... on EntryInterface { sectionHandle } } } }' 'r["data"]["bloodhoundSearch"]["elements"][0]["sectionHandle"]')" "articles"
+ok "gql: total, pages, page" "$(gq full '{ bloodhoundSearch(index: "articles", query: "momentum", perPage: 1, page: 2) { total pages page elements { id } } }' 'j(b["total"], b["pages"], b["page"], len(b["elements"]))')" "2/2/2/1"
+ok "gql: where filters" "$(gq full '{ a: bloodhoundSearch(index: "articles", query: "momentum", where: [{attribute: "section", value: "articles"}]) { total } b: bloodhoundSearch(index: "articles", query: "momentum", where: [{attribute: "section", value: "nope\" OR section=\"articles"}]) { total } }' 'j(d["a"]["total"], d["b"]["total"])')" "2/0"
+ok "gql: users index, fields through UserInterface" "$(gq full '{ bloodhoundSearch(index: "people", query: "lovelace") { elements { ... on UserInterface { fullName } } } }' 'r["data"]["bloodhoundSearch"]["elements"][0]["fullName"]')" "Ada Lovelace"
+ok "gql: no email over GraphQL search either" "$(gq full '{ bloodhoundSearch(index: "people", query: "bh.test") { total } }' 'r["data"]["bloodhoundSearch"]["total"]')" "0"
+ok "gql: schema without the index has no bloodhoundSearch query" "$(gq noindex '{ bloodhoundSearch(index: "articles", query: "momentum") { total } }' 'r["data"]')" "ERR:Cannot query field \"bloodhoundSearch\" on type \"Query\"."
+ok "gql: an index the schema lacks reads the same as an unknown one" "$(gq nosection '{ a: bloodhoundSearch(index: "people", query: "x") { total } }' '0')/$(gq nosection '{ bloodhoundSearch(index: "nosuch", query: "x") { total } }' '0')" "ERR:This schema can’t search the “people” index./ERR:This schema can’t search the “nosuch” index."
+ok "gql: hits the schema can't read are filtered out (index allowed, section not)" "$(gq nosection '{ bloodhoundSearch(index: "articles", query: "momentum") { total elements { id } } }' 'j(b["total"], len(b["elements"]))')" "2/0"
+ok "gql: a site the schema can't read is refused" "$(gq full '{ bloodhoundSearch(index: "articles", query: "momentum", site: "nope") { total } }' '0')" "ERR:This schema can’t read the “nope” site."
+ok "gql: an edit shows up (GraphQL cache invalidated)" "$(gq full '{ bloodhoundSearch(index: "articles", query: "aerostats") { total } }' 'r["data"]["bloodhoundSearch"]["total"]')/$(entry second-article-2 '$e->setFieldValue("summary", "Now about aerostats.");' >/dev/null; settle; gq full '{ bloodhoundSearch(index: "articles", query: "aerostats") { elements { id } } }' "$ids_of")" "0/10"
+entry second-article-2 '$e->setFieldValue("summary", "Now about zeppelins.");' >/dev/null; settle
+cp .env /tmp/bh-env.bak; sed -i '' 's/^SCOUT_DRIVER=.*/SCOUT_DRIVER=meilisearch/; s#^MEILISEARCH_HOST=.*#MEILISEARCH_HOST=http://127.0.0.1:1#' .env; grep -q '^MEILISEARCH_HOST=' .env || echo 'MEILISEARCH_HOST=http://127.0.0.1:1' >> .env
+ok "gql: engine down → empty results with an error, not a failed request" "$(gq full '{ bloodhoundSearch(index: "articles", query: "momentumx") { error elements { id } } }' 'j(b["error"], len(b["elements"]))')" "Search is temporarily unavailable./0"
+cp /tmp/bh-env.bak .env; sleep 1
+
 # ---- Products (only when Craft Commerce is installed and enabled in the harness) ----
 COMMERCE=$(tk "echo JustinHoltWeb\Bloodhound\Indexes\Indexes::commerceAvailable() ? 'yes' : 'no';")
 if [ "$COMMERCE" = yes ]; then
@@ -185,6 +215,9 @@ if [ "$COMMERCE" = yes ]; then
   ok "products: re-enabling brings it back" "$(prod $TENT '$p->enabled = true;'; settle)/$(fids find shop alpine)" "saved/$TENT "
   pdate() { tk "Illuminate\Support\Facades\DB::table('commerce_products')->where('id',$TENT)->update($1); echo 1;" >/dev/null; }
   # Expiry and go-live save nothing, so no event fires: sync-scheduled has to notice.
+  tk "require 'storage/bh-gql-fixtures.php';" >/dev/null
+  ok "products gql: bloodhoundSearch finds a product by variant SKU" "$(gq full '{ bloodhoundSearch(index: "shop", query: "LAMP-200") { elements { id title } } }' '",".join(e["id"] for e in b["elements"])')" "$LAMP"
+  ok "products gql: index allowed but product type not → products filtered out" "$(gq nosection '{ bloodhoundSearch(index: "shop", query: "LAMP-200") { total elements { id } } }' 'j(b["total"], len(b["elements"]))')" "1/0"
   ok "products: an expired product is removed by sync-scheduled" "$(pdate "['expiryDate'=>now()->utc()->subMinute()->format('Y-m-d H:i:s')]"; ddev artisan craft:bloodhound:sync-scheduled --since='-10 minutes' >/dev/null 2>&1; settle; fids find shop alpine)" ""
   ok "products: a product that just went live is added by sync-scheduled" "$(pdate "['expiryDate'=>null,'postDate'=>now()->utc()->subMinute()->format('Y-m-d H:i:s')]"; ddev artisan craft:bloodhound:sync-scheduled --since='-10 minutes' >/dev/null 2>&1; settle; fids find shop alpine)" "$TENT "
 fi
@@ -197,6 +230,7 @@ edition() { tk "CraftCms\\Cms\\Support\\Facades\\Plugins::switchEdition('bloodho
 
 edition lite; settings "['replaceCraftSearch' => false]"
 ok "lite: Craft's search can't take a typo" "$(cids craft momentm)" ""
+ok "lite gql: entries(search:) stays with Craft (no typo match)" "$(gq full '{ entries(section: "articles", search: "momentm") { id } }' 'len(r["data"]["entries"])')" "0"
 ddev artisan craft:bloodhound:import articles --swap >/dev/null 2>&1; ok "lite: import --swap is refused" "$?" "1"
 edition pro
 settings "['replaceCraftSearch' => false]"
@@ -259,11 +293,15 @@ for e in craft-users craft-users-blade; do
   ok "pro $e: exact name" "$(cids $e lovelace)" "$ADA"
 done
 [ "$DRIVER" != harness ] && ok "pro: user query including inactive users falls back to Craft" "$(cids craft-users lovelce '&all=1')" ""
+# GraphQL's own `search:` argument goes through the same takeover.
+[ "$DRIVER" != harness ] && ok "pro gql: entries(search:) answered by the engine (typo tolerant)" "$(gq full '{ entries(section: "articles", search: "momentm", orderBy: "score desc") { id } }' '",".join(sorted(e["id"] for e in r["data"]["entries"]))')" "2,8"
+ok "pro gql: rank order kept with orderBy: \"score desc\"" "$(gq full '{ entries(section: "articles", search: "momentum", orderBy: "score desc") { id } }' 'r["data"]["entries"][0]["id"]')" "$(ids twig momentum | cut -d, -f1)"
 if [ "$COMMERCE" = yes ]; then
   for e in craft-products craft-products-blade; do
     [ "$DRIVER" != harness ] && ok "pro $e: product .search() answered by the engine (typo tolerant)" "$(cids $e lantrn)" "$LAMP"
     ok "pro $e: exact SKU" "$(cids $e LAMP-200)" "$LAMP"
   done
+  [ "$DRIVER" != harness ] && ok "pro gql: products(search:) answered by the engine (typo tolerant)" "$(gq full '{ products(type: "gear", search: "lantrn", orderBy: "score desc") { id } }' '",".join(e["id"] for e in d["products"])')" "$LAMP"
   [ "$DRIVER" != harness ] && ok "pro: product query including disabled products falls back to Craft" "$(cids craft-products lantrn '&all=1')" ""
 fi
 settings "['replaceCraftSearch' => false]"
@@ -276,11 +314,13 @@ ok "database driver: search shows unavailable, page still renders" "$(curl -sk "
 ok "database driver: saving an entry still works" "$(entry hello-momentum '')" "saved"
 cp /tmp/bh-env.bak .env; sleep 1
 
+ok "gql: CP schema editor offers each index as a permission" "$(curl -sk -b "$J" "$U/admin/graphql/schemas/new" | grep -c 'bloodhound.articles:read' | awk '{print ($1>0)?"yes":"no"}')" "yes"
 ok "settings page loads" "$(curl -sk -b "$J" -o /dev/null -w '%{http_code}' "$U/admin/settings/plugins/bloodhound")" "200"
 
 entry second-article-2 '$e->setFieldValue("summary", "The related one.");' >/dev/null
 for n in adal1815 ghopper mcurie lpauling mailperson@bh.test; do tk "\$u=$UE::find()->username('$n')->status(null)->one(); if (\$u) CraftCms\Cms\Support\Facades\Elements::deleteElement(\$u, true); echo 1;" >/dev/null; done
 ok "users: deleted users leave the index" "$(settle; fids find people lovelace)" ""
+tk 'foreach (CraftCms\Cms\Support\Facades\Gql::getTokens() as $t) if (str_starts_with((string) $t->name, "bh_")) CraftCms\Cms\Support\Facades\Gql::deleteTokenById($t->id); foreach (CraftCms\Cms\Support\Facades\Gql::getSchemas() as $s) if (str_starts_with((string) $s->name, "bh_")) CraftCms\Cms\Support\Facades\Gql::deleteSchemaById($s->id); echo 1;' >/dev/null
 ddev artisan craft:bloodhound:flush people >/dev/null 2>&1
 [ "$COMMERCE" = yes ] && ddev artisan craft:bloodhound:flush shop >/dev/null 2>&1
 settings "['indexes' => [['handle' => 'articles', 'elementType' => 'entries', 'sources' => 'articles', 'fields' => 'summary, customers']]]"

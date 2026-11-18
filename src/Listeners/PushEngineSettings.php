@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace JustinHoltWeb\Bloodhound\Listeners;
 
 use CraftCms\Cms\Plugin\Events\PluginSettingsSaved;
+use CraftCms\Cms\Support\Facades\Gql;
 use Illuminate\Support\Facades\Log;
 use JustinHoltWeb\Bloodhound\Indexes\Indexes;
 use JustinHoltWeb\Bloodhound\Sync\Indexer;
@@ -27,6 +28,9 @@ class PushEngineSettings
         if ($event->plugin->handle !== 'bloodhound') {
             return;
         }
+
+        // Index handles are GraphQL schema components; cached schemas must see the change.
+        rescue(fn () => Gql::invalidateCaches(), report: false);
 
         foreach ($this->indexes->all() as $index) {
             foreach ($this->indexer->siteHandles() as $site) {
