@@ -27,8 +27,10 @@ In Craft 6, `.orderBy('score')` sorts ascending. Use `.orderBy('score desc')`.
 
 ## Which engines does it support?
 
-Anything Laravel Scout supports. Meilisearch and Typesense are configured for you, including index
-health; others work for indexing and searching.
+Meilisearch and Typesense, configured for you, including index health. Algolia should work but
+hasn't been verified yet. Scout's `database` and `collection` drivers aren't supported: they search
+your database tables rather than storing documents, which would only repeat what Craft's built-in
+search already does. See [Engines](engines) for the details.
 
 ## Will a disabled or expired entry ever show up in results?
 
