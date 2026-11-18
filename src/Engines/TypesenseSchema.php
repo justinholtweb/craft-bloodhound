@@ -35,6 +35,16 @@ final class TypesenseSchema
                 ['name' => 'filename', 'type' => 'string', 'optional' => true],
                 ['name' => 'alt', 'type' => 'string', 'optional' => true],
             ],
+            'users' => [
+                ['name' => 'username', 'type' => 'string', 'optional' => true],
+                ['name' => 'groups', 'type' => 'string[]', 'optional' => true, 'facet' => true],
+            ],
+            'products' => [
+                ['name' => 'productType', 'type' => 'string', 'optional' => true, 'facet' => true],
+                ['name' => 'postDate', 'type' => 'int64', 'optional' => true],
+                ['name' => 'price', 'type' => 'float', 'optional' => true],
+                ['name' => 'sku', 'type' => 'string[]', 'optional' => true],
+            ],
             default => [
                 ['name' => 'section', 'type' => 'string', 'optional' => true, 'facet' => true],
                 ['name' => 'type', 'type' => 'string', 'optional' => true, 'facet' => true],
@@ -75,7 +85,10 @@ final class TypesenseSchema
             $document['id'] = (string) $document['id'];
         }
 
-        $text = array_flip(array_diff($index->fields, [...IndexDefinition::ATTRIBUTES, 'title', 'filename', 'alt']));
+        // A product without a price has a null one; Typesense wants the field absent.
+        $document = array_filter($document, fn ($value, $key) => $value !== null || ! in_array($key, ['price', 'username', 'postDate'], true), ARRAY_FILTER_USE_BOTH);
+
+        $text = array_flip(array_diff($index->fields, [...IndexDefinition::ATTRIBUTES, 'title', ...$index->builtInText()]));
 
         foreach ($document as $key => $value) {
             if (! isset($text[$key])) {

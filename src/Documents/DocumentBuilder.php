@@ -9,6 +9,9 @@ use CraftCms\Cms\Asset\Elements\Asset;
 use CraftCms\Cms\Element\Contracts\ElementInterface;
 use CraftCms\Cms\Element\Queries\ElementQuery;
 use CraftCms\Cms\Entry\Elements\Entry;
+use CraftCms\Cms\User\Elements\User;
+use CraftCms\Commerce\Product\Elements\Product;
+use CraftCms\Commerce\Product\Variant\Elements\Variant;
 use DateTimeInterface;
 use JustinHoltWeb\Bloodhound\Indexes\IndexDefinition;
 use Stringable;
@@ -42,6 +45,19 @@ class DocumentBuilder
             ];
         } elseif ($element instanceof Asset) {
             $doc += ['volume' => $element->getVolume()->handle, 'kind' => $element->kind, 'filename' => $element->getFilename(), 'alt' => $element->alt];
+        } elseif ($element instanceof User) {
+            $doc = [...$doc, ...self::user($element)];
+        } elseif (class_exists(Product::class) && $element instanceof Product) {
+            $doc += [
+                'productType' => $element->getType()->handle,
+                'postDate' => $element->postDate?->getTimestamp(),
+                'price' => $element->getDefaultPrice(),
+                // Every enabled variant's SKU, default first, so a SKU search finds the product.
+                'sku' => array_values(array_unique(array_filter([
+                    $element->defaultSku,
+                    ...$element->getVariants()->map(fn (Variant $v) => rescue(fn () => $v->getSku(), null, false))->all(),
+                ], fn ($sku) => is_string($sku) && $sku !== ''))),
+            ];
         }
 
         foreach ($index->fields as $handle) {
@@ -51,6 +67,23 @@ class DocumentBuilder
         }
 
         return $doc;
+    }
+
+    /**
+     * A user's public face: full name (else username) and group handles. The email
+     * address is never indexed, nor a username that is one (`useEmailAsUsername`).
+     *
+     * @return array{title: string, username: ?string, groups: list<string>}
+     */
+    private static function user(User $user): array
+    {
+        $username = $user->username !== null && ! str_contains($user->username, '@') ? $user->username : null;
+
+        return [
+            'title' => trim((string) $user->fullName) ?: (string) $username,
+            'username' => $username,
+            'groups' => array_values(array_map(fn ($group) => (string) $group->handle, $user->getGroups())),
+        ];
     }
 
     public static function value(mixed $value): mixed

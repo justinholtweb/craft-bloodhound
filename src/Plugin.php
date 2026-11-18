@@ -71,6 +71,8 @@ class Plugin extends BasePlugin
     {
         $this->app->bind(Settings::class, fn (): Settings => $this->getSettings());
         $this->app->scoped(Bloodhound::class);
+        // One listener per request/job, so a product save and its variants' saves sync once.
+        $this->app->scoped(Listeners\SyncOnElementChange::class);
         Event::subscribe(Listeners\SyncOnElementChange::class);
 
         if ($this->is(self::EDITION_PRO)) {
@@ -102,20 +104,22 @@ class Plugin extends BasePlugin
                     'elementType' => ['heading' => t('Elements', category: 'bloodhound'), 'type' => 'select', 'options' => [
                         ['label' => t('Entries', category: 'bloodhound'), 'value' => 'entries'],
                         ['label' => t('Assets', category: 'bloodhound'), 'value' => 'assets'],
+                        ['label' => t('Users', category: 'bloodhound'), 'value' => 'users'],
+                        ['label' => t('Products (Commerce)', category: 'bloodhound'), 'value' => 'products'],
                     ]],
-                    'sources' => ['heading' => t('Sections / volumes', category: 'bloodhound'), 'type' => 'singleline', 'code' => true, 'placeholder' => 'news, blog'],
+                    'sources' => ['heading' => t('Sections / volumes / groups / product types', category: 'bloodhound'), 'type' => 'singleline', 'code' => true, 'placeholder' => 'news, blog'],
                     'fields' => ['heading' => t('Fields to index', category: 'bloodhound'), 'type' => 'singleline', 'code' => true, 'placeholder' => 'summary, body'],
                 ])
                 ->allowAdd()->allowDelete()->allowReorder()
                 ->addRowLabel(t('Add an index', category: 'bloodhound')))
-                ->instructions(t('Each index is kept per site in your Scout engine (SCOUT_DRIVER). Only live elements are indexed. Run `craft:bloodhound:import` after changing an index.', category: 'bloodhound')),
+                ->instructions(t('Each index is kept per site in your Scout engine (SCOUT_DRIVER). Only live elements (active users) are indexed. Products need Craft Commerce. A user index holds each user’s name and username, so list only fields you’d show publicly. Run `craft:bloodhound:import` after changing an index.', category: 'bloodhound')),
             Field::make(t('Index prefix', category: 'bloodhound'), Text::make('indexPrefix')->placeholder('$CRAFT_ENVIRONMENT'))
                 ->instructions(t('Prepended to engine index names so environments don’t share indexes.', category: 'bloodhound')),
             Field::make(t('Queue index updates', category: 'bloodhound'), Lightswitch::make('queueUpdates'))
                 ->instructions(t('Write to the engine from the queue instead of during the save request.', category: 'bloodhound')),
             ...($this->is(self::EDITION_PRO) ? [
                 Field::make(t('Answer Craft’s search from the engine', category: 'bloodhound'), Lightswitch::make('replaceCraftSearch'))
-                    ->instructions(t('Front-end `.search()` queries whose results all live in one index (live entries or assets of its sections or volumes, one site) are answered by the engine. Everything else, including the control panel, drafts, disabled entries and Craft search syntax like `title:foo`, keeps using Craft’s own search, as does any query while the engine is down.', category: 'bloodhound')),
+                    ->instructions(t('Front-end `.search()` queries whose results all live in one index (live entries, assets, active users or live products of its sources, one site) are answered by the engine. Everything else, including the control panel, drafts, disabled entries and Craft search syntax like `title:foo`, keeps using Craft’s own search, as does any query while the engine is down.', category: 'bloodhound')),
                 Field::make(t('Synonyms', category: 'bloodhound'), Table::make('synonyms')
                     ->columns([
                         'term' => ['heading' => t('Word', category: 'bloodhound'), 'type' => 'singleline', 'placeholder' => 'sofa'],

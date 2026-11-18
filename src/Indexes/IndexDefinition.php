@@ -10,10 +10,11 @@ namespace JustinHoltWeb\Bloodhound\Indexes;
  */
 final readonly class IndexDefinition
 {
-    public const array ELEMENT_TYPES = ['entries', 'assets'];
+    /** Products need Craft Commerce. */
+    public const array ELEMENT_TYPES = ['entries', 'assets', 'users', 'products'];
 
     /**
-     * @param  list<string>  $sources  Section handles (entries) or volume handles (assets); empty = all
+     * @param  list<string>  $sources  Section (entries), volume (assets), user group (users) or product type (products) handles; empty = all
      * @param  list<string>  $fields  Custom field handles copied into each document
      */
     public function __construct(
@@ -39,19 +40,60 @@ final readonly class IndexDefinition
     }
 
     /** Attributes a document carries for filtering and sorting, never searched as text. */
-    public const array ATTRIBUTES = ['id', 'url', 'siteId', 'dateUpdated', 'postDate', 'section', 'type', 'volume', 'kind'];
+    public const array ATTRIBUTES = ['id', 'url', 'siteId', 'dateUpdated', 'postDate', 'section', 'type', 'volume', 'kind', 'groups', 'productType', 'price'];
+
+    /**
+     * Text every document of this element type carries besides the title:
+     * an asset's filename and alt text, a user's username, a product's variant SKUs.
+     *
+     * @return list<string>
+     */
+    public function builtInText(): array
+    {
+        return match ($this->elementType) {
+            'assets' => ['filename', 'alt'],
+            'users' => ['username'],
+            'products' => ['sku'],
+            default => [],
+        };
+    }
+
+    /**
+     * Attributes templates can filter on with `where`.
+     *
+     * @return list<string>
+     */
+    public function filterableAttributes(): array
+    {
+        return ['siteId', ...match ($this->elementType) {
+            'assets' => ['volume', 'kind'],
+            'users' => ['groups'],
+            'products' => ['productType', 'price'],
+            default => ['section', 'type'],
+        }];
+    }
+
+    /** @return list<string> */
+    public function sortableAttributes(): array
+    {
+        return ['dateUpdated', ...match ($this->elementType) {
+            'entries' => ['postDate'],
+            'products' => ['postDate', 'price'],
+            default => [],
+        }];
+    }
 
     /**
      * What a query is matched against, in ranking order: the title, then the
-     * index's own fields. Every engine is told the same list, so results don't
-     * depend on which engine is configured (left to itself, Meilisearch would
-     * also search URLs and type handles).
+     * element type's own text, then the index's fields. Every engine is told the
+     * same list, so results don't depend on which engine is configured (left to
+     * itself, Meilisearch would also search URLs and type handles).
      *
      * @return list<string>
      */
     public function searchableAttributes(): array
     {
-        $fields = ['title', ...($this->elementType === 'assets' ? ['filename', 'alt'] : []), ...$this->fields];
+        $fields = ['title', ...$this->builtInText(), ...$this->fields];
 
         return array_values(array_unique(array_diff($fields, self::ATTRIBUTES)));
     }

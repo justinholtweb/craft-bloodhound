@@ -102,11 +102,10 @@ class Indexer
 
         rescue(fn () => $engine->createIndex($name, ['primaryKey' => 'id']), report: false);
 
-        $filterable = $index->elementType === 'assets' ? ['siteId', 'volume', 'kind'] : ['siteId', 'section', 'type'];
         $engine->updateIndexSettings($name, [
             'searchableAttributes' => $index->searchableAttributes(),
-            'filterableAttributes' => $filterable,
-            'sortableAttributes' => ['dateUpdated', ...($index->elementType === 'entries' ? ['postDate'] : [])],
+            'filterableAttributes' => $index->filterableAttributes(),
+            'sortableAttributes' => $index->sortableAttributes(),
             // Meilisearch synonyms are one-way per key, so each group is written out in every direction.
             'synonyms' => (object) self::mutualSynonyms($this->synonyms()),
         ]);

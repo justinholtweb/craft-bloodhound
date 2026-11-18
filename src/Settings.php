@@ -22,7 +22,7 @@ class Settings extends PluginSettings
     public bool $queueUpdates = true;
 
     /**
-     * Index rows: handle, elementType (entries|assets), sources, fields.
+     * Index rows: handle, elementType (entries|assets|users|products), sources, fields.
      *
      * @var array<array-key, mixed>|null
      */
@@ -96,7 +96,7 @@ class Settings extends PluginSettings
             'indexPrefix' => ['nullable', 'string', 'max:64'],
             'indexes' => ['nullable', 'array'],
             'indexes.*.handle' => ['required', 'regex:/^[a-z][a-z0-9_]{0,47}$/', 'distinct'],
-            'indexes.*.elementType' => ['required', 'in:entries,assets'],
+            'indexes.*.elementType' => ['required', 'in:entries,assets,users,products'],
             'synonyms' => ['nullable', 'array', 'max:500'],
             'stopWords' => ['nullable', 'string', 'max:10000'],
         ];
