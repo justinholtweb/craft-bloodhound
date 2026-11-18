@@ -1,0 +1,6 @@
+{# Bloodhound harness: Twig search page #}
+{% set results = bloodhound.search('articles', app('request').query('q'), {page: app('request').query('page', 1), perPage: 2}) %}
+<p id="total">{{ results.total }}</p>
+<p id="pages">{{ results.pages() }}</p>
+<p id="error">{{ results.error ?? '' }}</p>
+<ol id="hits">{% for entry in results %}<li data-id="{{ entry.id }}">{{ entry.title }}</li>{% endfor %}</ol>

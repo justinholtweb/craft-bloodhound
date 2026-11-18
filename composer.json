@@ -22,7 +22,8 @@
     ],
     "require": {
         "php": "^8.5",
-        "craftcms/cms": "^6.0.0-beta.1"
+        "craftcms/cms": "^6.0.0-beta.1",
+        "laravel/scout": "^11.0"
     },
     "require-dev": {
         "larastan/larastan": "^3.13",
@@ -70,5 +71,10 @@
         "documentationUrl": "https://github.com/justinholtweb/craft-bloodhound",
         "changelogUrl": "https://raw.githubusercontent.com/justinholtweb/craft-bloodhound/main/CHANGELOG.md",
         "class": "JustinHoltWeb\\Bloodhound\\Plugin"
+    },
+    "suggest": {
+        "meilisearch/meilisearch-php": "Meilisearch engine",
+        "typesense/typesense-php": "Typesense engine",
+        "algolia/algoliasearch-client-php": "Algolia engine"
     }
 }

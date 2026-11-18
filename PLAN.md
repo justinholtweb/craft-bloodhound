@@ -17,6 +17,20 @@ Scout's `Searchable` expects Eloquent models; Craft elements aren't. Bloodhound 
 `EngineManager` directly with a thin adapter that presents an element as a searchable record, so every Scout
 engine works unchanged.
 
+## Status
+- **2026-11-18 — phase 1 done (pending a live Meilisearch run).** CP-defined indexes (entries/assets,
+  sources, fields), per-site engine indexes, sync on save/delete (queued or inline, failures never block a
+  save), `sync-scheduled` for silent go-live/expiry, `import [--fresh]` / `flush`, and one search API for
+  Twig and Blade with live-only hydration. `SearchDocument` implements the engine-facing methods itself
+  rather than Scout's `Searchable` trait (which registers observers + global collection macros).
+- Verified against Scout's real `Engine` API with a harness-only file engine (27 checks incl. queue,
+  scheduled publishing, stale-document filtering, engine outage). **Meilisearch add-on not yet installed
+  in the harness** — the install was blocked by Claude Code's permission check; needs a run by Justin.
+- Relations index as the related elements' UI labels, so Wingman/Eloquent elements (no titles) read as
+  their names.
+- Open: Meilisearch filterable/sortable attributes pushed at import; Typesense (needs a per-class
+  collection schema in Scout config); Pro: take over Craft's own search, synonyms, zero-downtime reindex.
+
 ## Phases
 1. **Indexes (Lite).** CP-defined indexes: element type, sources (sections/volumes/groups), condition builder,
    per-site, and a field → document mapping (or a transformer class). Sync on save/delete/status change,

@@ -5,19 +5,46 @@ declare(strict_types=1);
 namespace JustinHoltWeb\Bloodhound;
 
 use CraftCms\Cms\Plugin\PluginSettings;
+use CraftCms\Cms\Support\Env;
 
 /**
  * Blank-able properties are nullable: Laravel's ConvertEmptyStringsToNull middleware
  * turns an empty field into null before Craft assigns it.
+ *
+ * The engine itself is Scout's own config (`SCOUT_DRIVER`, `MEILISEARCH_HOST`, …).
  */
 class Settings extends PluginSettings
 {
-    /** Index prefix. Prepended to every index name, e.g. the environment ($CRAFT_ENVIRONMENT). */
+    /** Prepended to every engine index name (after `scout.prefix`), e.g. `$CRAFT_ENVIRONMENT_`. */
     public ?string $indexPrefix = null;
 
-    /** Queue index updates. Push index updates to the queue instead of doing them during the save request. */
+    /** Push index updates to the queue instead of writing during the save request. */
     public bool $queueUpdates = true;
 
-    /** Take over Craft search. Answer element queries' search param from the Scout engine instead of Craft's own search index (Pro). */
-    public bool $takeOverSearch = false;
+    /**
+     * Index rows: handle, elementType (entries|assets), sources, fields.
+     *
+     * @var array<array-key, mixed>|null
+     */
+    public ?array $indexes = [];
+
+    public function prefix(): ?string
+    {
+        $prefix = Env::parse($this->indexPrefix === null ? null : trim($this->indexPrefix));
+
+        return $prefix !== null && preg_match('/^[A-Za-z0-9_-]*$/D', $prefix) ? $prefix : null;
+    }
+
+    /**
+     * @return array<string, list<string>>
+     */
+    public function getRules(): array
+    {
+        return [
+            'indexPrefix' => ['nullable', 'string', 'max:64'],
+            'indexes' => ['nullable', 'array'],
+            'indexes.*.handle' => ['required', 'regex:/^[a-z][a-z0-9_]{0,47}$/', 'distinct'],
+            'indexes.*.elementType' => ['required', 'in:entries,assets'],
+        ];
+    }
 }

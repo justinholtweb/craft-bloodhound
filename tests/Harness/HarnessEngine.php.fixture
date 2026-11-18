@@ -1,0 +1,130 @@
+<?php
+
+namespace App\Search;
+
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\File;
+use Laravel\Scout\Builder;
+use Laravel\Scout\Engines\Engine;
+
+/**
+ * Harness-only Scout engine: documents in JSON files under storage/harness-search, AND-of-terms
+ * matching, title hits ranked first. Lets plugin tests exercise Scout's real Engine API without a
+ * search server. Not part of any plugin.
+ */
+class HarnessEngine extends Engine
+{
+    private function path(string $index): string
+    {
+        return storage_path('harness-search/'.preg_replace('/[^A-Za-z0-9_-]/', '_', $index).'.json');
+    }
+
+    /** @return array<string, array<string, mixed>> */
+    private function load(string $index): array
+    {
+        return File::exists($p = $this->path($index)) ? json_decode(File::get($p), true) : [];
+    }
+
+    private function save(string $index, array $docs): void
+    {
+        File::ensureDirectoryExists(dirname($this->path($index)));
+        File::put($this->path($index), json_encode($docs, JSON_PRETTY_PRINT));
+    }
+
+    public function update($models)
+    {
+        if ($models->isEmpty()) {
+            return;
+        }
+        $index = $models->first()->indexableAs();
+        $docs = $this->load($index);
+        foreach ($models as $m) {
+            $docs[(string) $m->getScoutKey()] = $m->toSearchableArray();
+        }
+        $this->save($index, $docs);
+    }
+
+    public function delete($models)
+    {
+        if ($models->isEmpty()) {
+            return;
+        }
+        $index = $models->first()->indexableAs();
+        $docs = $this->load($index);
+        foreach ($models as $m) {
+            unset($docs[(string) $m->getScoutKey()]);
+        }
+        $this->save($index, $docs);
+    }
+
+    public function search(Builder $builder)
+    {
+        return $this->performSearch($builder, null, 1);
+    }
+
+    public function paginate(Builder $builder, $perPage, $page)
+    {
+        return $this->performSearch($builder, $perPage, $page);
+    }
+
+    private function performSearch(Builder $builder, ?int $perPage, int $page): array
+    {
+        $terms = array_filter(preg_split('/\s+/', mb_strtolower($builder->query)));
+        $hits = [];
+        foreach ($this->load($builder->index ?: $builder->model->searchableAs()) as $doc) {
+            foreach ($builder->wheres as $field => $value) {
+                if (($doc[$field] ?? null) != $value) {
+                    continue 2;
+                }
+            }
+            $hay = mb_strtolower(json_encode(array_values($doc)));
+            if ($terms && array_filter($terms, fn ($t) => ! str_contains($hay, $t))) {
+                continue;
+            }
+            $score = count(array_filter($terms, fn ($t) => str_contains(mb_strtolower((string) ($doc['title'] ?? '')), $t)));
+            $hits[] = ['doc' => $doc, 'score' => $score];
+        }
+        usort($hits, fn ($a, $b) => [$b['score'], $a['doc']['id']] <=> [$a['score'], $b['doc']['id']]);
+        $total = count($hits);
+        if ($perPage) {
+            $hits = array_slice($hits, ($page - 1) * $perPage, $perPage);
+        }
+
+        return ['hits' => array_column($hits, 'doc'), 'total' => $total];
+    }
+
+    public function mapIds($results)
+    {
+        return collect($results['hits'])->pluck('id')->values();
+    }
+
+    public function map(Builder $builder, $results, $model)
+    {
+        return collect();
+    }
+
+    public function lazyMap(Builder $builder, $results, $model)
+    {
+        return collect()->lazy();
+    }
+
+    public function getTotalCount($results)
+    {
+        return $results['total'];
+    }
+
+    public function flush($model)
+    {
+        File::delete($this->path($model->searchableAs()));
+    }
+
+    public function createIndex($name, array $options = [])
+    {
+        return null;
+    }
+
+    public function deleteIndex($name)
+    {
+        File::delete($this->path($name));
+    }
+}

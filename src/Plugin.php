@@ -6,33 +6,60 @@ namespace JustinHoltWeb\Bloodhound;
 
 use CraftCms\Cms\Plugin\Plugin as BasePlugin;
 use CraftCms\Cms\Ui\Controls\Lightswitch;
+use CraftCms\Cms\Ui\Controls\Table;
 use CraftCms\Cms\Ui\Controls\Text;
 use CraftCms\Cms\Ui\Nodes\Field;
 use CraftCms\Cms\Ui\Ui;
 use CraftCms\Cms\Ui\UiContext;
+use CraftCms\Cms\View\Events\TemplateGlobalsResolving;
+use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Support\Facades\Event;
+use JustinHoltWeb\Bloodhound\Search\Bloodhound;
 use Override;
 
 use function CraftCms\Cms\t;
 
 /**
- * Bloodhound — Laravel Scout for Craft elements — index entries, assets, users or products into Meilisearch, Typesense, Algolia or the database driver.
- *
- * See PLAN.md for the build phases.
+ * Bloodhound — Laravel Scout for Craft elements: index entries and assets into
+ * Meilisearch, Algolia or any Scout engine, and search them from Twig or Blade.
  *
  * @method Settings getSettings()
  */
 class Plugin extends BasePlugin
 {
-    public bool $hasCpSettings = true;
-
     public const string EDITION_LITE = 'lite';
 
     public const string EDITION_PRO = 'pro';
+
+    public bool $hasCpSettings = true;
+
+    protected array $events = [
+        TemplateGlobalsResolving::class => Listeners\RegisterTemplateApi::class,
+    ];
+
+    protected array $commands = [
+        Commands\ImportCommand::class,
+        Commands\FlushCommand::class,
+        Commands\SyncScheduledCommand::class,
+    ];
 
     #[Override]
     public static function editions(): array
     {
         return [self::EDITION_LITE, self::EDITION_PRO];
+    }
+
+    public function boot(): void
+    {
+        $this->app->bind(Settings::class, fn (): Settings => $this->getSettings());
+        $this->app->scoped(Bloodhound::class);
+        Event::subscribe(Listeners\SyncOnElementChange::class);
+    }
+
+    #[Override]
+    protected function schedule(Schedule $schedule): void
+    {
+        $schedule->command('craft:bloodhound:sync-scheduled')->everyFifteenMinutes()->withoutOverlapping();
     }
 
     #[Override]
@@ -45,12 +72,23 @@ class Plugin extends BasePlugin
     public function settingsUi(UiContext $context = new UiContext): Ui
     {
         return Ui::make([
-            Field::make(t('Index prefix', category: 'bloodhound'), Text::make('indexPrefix'))
-                ->instructions(t('Prepended to every index name, e.g. the environment ($CRAFT_ENVIRONMENT).', category: 'bloodhound')),
+            Field::make(t('Indexes', category: 'bloodhound'), Table::make('indexes')
+                ->columns([
+                    'handle' => ['heading' => t('Handle', category: 'bloodhound'), 'type' => 'singleline', 'code' => true, 'placeholder' => 'articles'],
+                    'elementType' => ['heading' => t('Elements', category: 'bloodhound'), 'type' => 'select', 'options' => [
+                        ['label' => t('Entries', category: 'bloodhound'), 'value' => 'entries'],
+                        ['label' => t('Assets', category: 'bloodhound'), 'value' => 'assets'],
+                    ]],
+                    'sources' => ['heading' => t('Sections / volumes', category: 'bloodhound'), 'type' => 'singleline', 'code' => true, 'placeholder' => 'news, blog'],
+                    'fields' => ['heading' => t('Fields to index', category: 'bloodhound'), 'type' => 'singleline', 'code' => true, 'placeholder' => 'summary, body'],
+                ])
+                ->allowAdd()->allowDelete()->allowReorder()
+                ->addRowLabel(t('Add an index', category: 'bloodhound')))
+                ->instructions(t('Each index is kept per site in your Scout engine (SCOUT_DRIVER). Only live elements are indexed. Run `craft:bloodhound:import` after changing an index.', category: 'bloodhound')),
+            Field::make(t('Index prefix', category: 'bloodhound'), Text::make('indexPrefix')->placeholder('$CRAFT_ENVIRONMENT'))
+                ->instructions(t('Prepended to engine index names so environments don’t share indexes.', category: 'bloodhound')),
             Field::make(t('Queue index updates', category: 'bloodhound'), Lightswitch::make('queueUpdates'))
-                ->instructions(t('Push index updates to the queue instead of doing them during the save request.', category: 'bloodhound')),
-            Field::make(t('Take over Craft search', category: 'bloodhound'), Lightswitch::make('takeOverSearch'))
-                ->instructions(t('Answer element queries\' search param from the Scout engine instead of Craft\'s own search index (Pro).', category: 'bloodhound')),
+                ->instructions(t('Write to the engine from the queue instead of during the save request.', category: 'bloodhound')),
         ]);
     }
 }
