@@ -8,6 +8,8 @@ use Illuminate\Database\Eloquent\Model;
 use JustinHoltWeb\Bloodhound\Engines\TypesenseSchema;
 use JustinHoltWeb\Bloodhound\Indexes\IndexDefinition;
 use Laravel\Scout\EngineManager;
+use Laravel\Scout\Engines\CollectionEngine;
+use Laravel\Scout\Engines\DatabaseEngine;
 use Laravel\Scout\Engines\Engine;
 use Laravel\Scout\Engines\TypesenseEngine;
 use LogicException;
@@ -107,7 +109,24 @@ class SearchDocument extends Model
 
     public function searchableUsing(): Engine
     {
-        return app(EngineManager::class)->engine();
+        return self::engine();
+    }
+
+    /**
+     * The configured Scout engine, if it can hold Bloodhound's documents. Scout's
+     * `database` and `collection` drivers don't store documents at all: they search
+     * a model's own table, and Bloodhound's documents have none. Left alone, an
+     * import "succeeds" while storing nothing, so they're refused up front.
+     */
+    public static function engine(): Engine
+    {
+        $engine = app(EngineManager::class)->engine();
+
+        if ($engine instanceof DatabaseEngine || $engine instanceof CollectionEngine) {
+            throw new LogicException('Bloodhound needs a search engine that stores documents (Meilisearch, Typesense or Algolia). Scout’s `'.config('scout.driver').'` driver searches model tables and can’t hold Bloodhound’s documents; set SCOUT_DRIVER to another engine.');
+        }
+
+        return $engine;
     }
 
     public function shouldBeSearchable(): bool

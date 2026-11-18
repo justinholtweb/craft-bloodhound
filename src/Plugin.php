@@ -26,8 +26,8 @@ use Override;
 use function CraftCms\Cms\t;
 
 /**
- * Bloodhound — Laravel Scout for Craft elements: index entries and assets into
- * Meilisearch, Algolia or any Scout engine, and search them from Twig or Blade.
+ * Bloodhound — Laravel Scout for Craft elements: index entries, assets, users and
+ * Commerce products into Meilisearch, Typesense or Algolia, and search them from Twig or Blade.
  *
  * @method Settings getSettings()
  */

@@ -14,7 +14,6 @@ use JustinHoltWeb\Bloodhound\Indexes\IndexDefinition;
 use JustinHoltWeb\Bloodhound\Indexes\Indexes;
 use JustinHoltWeb\Bloodhound\Plugin;
 use JustinHoltWeb\Bloodhound\Settings;
-use Laravel\Scout\EngineManager;
 use Laravel\Scout\Engines\Engine;
 use Laravel\Scout\Engines\MeilisearchEngine;
 use Laravel\Scout\Engines\TypesenseEngine;
@@ -30,7 +29,6 @@ class Indexer
         private readonly Indexes $indexes,
         private readonly DocumentBuilder $builder,
         private readonly Settings $settings,
-        private readonly EngineManager $engines,
     ) {}
 
     /**
@@ -213,7 +211,7 @@ class Indexer
 
     public function engine(): Engine
     {
-        return $this->engines->engine();
+        return SearchDocument::engine();
     }
 
     /**

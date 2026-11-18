@@ -9,6 +9,7 @@ use Illuminate\Console\Command;
 use JustinHoltWeb\Bloodhound\Indexes\Indexes;
 use JustinHoltWeb\Bloodhound\Plugin;
 use JustinHoltWeb\Bloodhound\Sync\Indexer;
+use LogicException;
 
 class ImportCommand extends Command
 {
@@ -36,6 +37,14 @@ class ImportCommand extends Command
 
         if ($this->option('swap') && $this->option('fresh')) {
             $this->components->error('Use --swap or --fresh, not both.');
+
+            return self::FAILURE;
+        }
+
+        try {
+            $indexer->engine();
+        } catch (LogicException $e) {
+            $this->components->error($e->getMessage());
 
             return self::FAILURE;
         }

@@ -1,10 +1,10 @@
 # Bloodhound — plan
 
-Laravel Scout for Craft elements — index entries, assets, users or Commerce products into Meilisearch, Typesense, Algolia or the database driver.
+Laravel Scout for Craft elements — index entries, assets, users or Commerce products into Meilisearch, Typesense or Algolia.
 
 - Package: `justinholtweb/craft-bloodhound` · handle `bloodhound` · namespace `JustinHoltWeb\Bloodhound`
 - Editions: Lite / Pro · pricing: Lite free / Pro $49
-- Laravel integration: laravel/scout — Scout v11, Laravel 13 compatible. Engines: Meilisearch, Typesense, Algolia, database.
+- Laravel integration: laravel/scout — Scout v11, Laravel 13 compatible. Engines: Meilisearch, Typesense, Algolia (unverified). Not `database`/`collection`.
 - Craft 6 only, native Laravel (no `craftcms/yii2-adapter`, ever). Follow
   `~/Sites/plugin-testing-craft6/porting/COOKBOOK.md` for Craft 6 idioms.
 
@@ -78,8 +78,11 @@ engine works unchanged.
   enabled; `tests/Harness/commerce-fixtures.php` seeds `gear`/`books` types and four products. With Commerce:
   file engine 91, Meilisearch 110, Typesense 115 (+2 CP 500s from Commerce dev's unbuilt Vite assets —
   environment). On beta.1 without Commerce: 79 / 95 / 100, all green.
-- Open: Algolia (needs a paid account to verify). Scout's `database` driver is listed but has never been
-  run against Bloodhound's table-less `SearchDocument` — verify or drop it from the engine list.
+- Open: Algolia (needs a paid account to verify). - **2026-11-18 — Scout `database` driver tested and dropped.** `DatabaseEngine::update()` stores nothing
+  and searches query the model's own table (`search_documents`, which doesn't exist): import reported
+  "3 documents", every search failed. `CollectionEngine` works the same way. `SearchDocument::engine()` now
+  refuses both with a clear `LogicException`; import prints it and exits 1, searches show "unavailable",
+  saves still work. Harness checks it on every run.
 
 ## Phases
 1. **Indexes (Lite).** CP-defined indexes: element type, sources (sections/volumes/groups), condition builder,

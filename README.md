@@ -1,6 +1,6 @@
 # Bloodhound
 
-Laravel Scout for Craft elements — index entries, assets, users or Commerce products into Meilisearch, Typesense, Algolia or the database driver.
+Laravel Scout for Craft elements — index entries, assets, users or Commerce products into Meilisearch, Typesense or Algolia.
 
 > [!WARNING]
 > **Craft 6 only, and in beta.** Bloodhound is a native **Craft CMS 6** plugin. Craft 6 is still in beta,
@@ -13,7 +13,7 @@ Docs: [justinholt.com/plugins/craft-bloodhound](https://justinholt.com/plugins/c
 
 - Craft CMS 6.0.0-beta.1 or later (native Craft 6 plugin, no Yii 2 adapter)
 - PHP 8.5
-- Laravel integration: laravel/scout. Scout v11, Laravel 13 compatible. Engines: Meilisearch, Typesense, Algolia, database.
+- Laravel integration: laravel/scout. Scout v11, Laravel 13 compatible. Engines: Meilisearch and Typesense (tested), Algolia (not yet verified). Scout's `database` and `collection` drivers can't hold Bloodhound's documents and are refused.
 
 ## Setup
 

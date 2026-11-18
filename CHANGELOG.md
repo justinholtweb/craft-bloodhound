@@ -3,7 +3,7 @@
 ## 6.0.0-beta.1 - Unreleased
 
 ### Added
-- Search indexes for entries, assets, users and Craft Commerce products, defined in Settings → Bloodhound, kept per site in any Laravel Scout engine.
+- Search indexes for entries, assets, users and Craft Commerce products, defined in Settings → Bloodhound, kept per site in Meilisearch, Typesense or Algolia through Laravel Scout.
 - User indexes hold name and username, never email addresses, and follow suspensions, activations and group changes.
 - Product indexes search every variant's SKU, filter on product type and price, and re-sync when a variant changes. They need Craft Commerce; without it they're skipped.
 - Sync on save and delete (queued by default), plus `craft:bloodhound:sync-scheduled` for scheduled and expiring entries and products.
@@ -15,5 +15,6 @@
 - Pro: Craft's own `.search()` answered by the engine for front-end queries an index fully covers, falling back to Craft's search otherwise.
 - Pro: synonyms (pushed to Meilisearch and Typesense on settings save) and stop words.
 - Pro: zero-downtime rebuilds — `craft:bloodhound:import --swap`, and the utility's Rebuild.
+- Scout's `database` and `collection` drivers are refused with a clear message: they search model tables and can't hold Bloodhound's documents.
 - Every engine searches the same fields (title, then the index's fields), so results don't depend on the engine.
 - `bloodhound.search()` for Twig and `$bloodhound->search()` for Blade, returning live elements in rank order.

@@ -269,6 +269,13 @@ fi
 settings "['replaceCraftSearch' => false]"
 edition lite
 
+# Scout's database/collection drivers search model tables and store nothing: refused, never a silent "success".
+cp .env /tmp/bh-env.bak; sed -i '' 's/^SCOUT_DRIVER=.*/SCOUT_DRIVER=database/' .env
+ok "database driver: import refused with a clear message" "$(ddev artisan craft:bloodhound:import articles >/tmp/bh-import.out 2>&1; echo $?)/$(grep -c 'needs a search engine that stores documents' /tmp/bh-import.out)/$(grep -c 'documents$' /tmp/bh-import.out)" "1/1/0"
+ok "database driver: search shows unavailable, page still renders" "$(curl -sk "$U/bh/find?index=articles&q=momentum" | grep -o '<p id="error">[^<]*' | sed 's/<p id="error">//')" "Search is temporarily unavailable."
+ok "database driver: saving an entry still works" "$(entry hello-momentum '')" "saved"
+cp /tmp/bh-env.bak .env; sleep 1
+
 ok "settings page loads" "$(curl -sk -b "$J" -o /dev/null -w '%{http_code}' "$U/admin/settings/plugins/bloodhound")" "200"
 
 entry second-article-2 '$e->setFieldValue("summary", "The related one.");' >/dev/null
