@@ -84,7 +84,9 @@ class HarnessEngine extends Engine implements \JustinHoltWeb\Bloodhound\Engines\
             foreach ($builder->wheres as $key => $where) {
                 // Scout 11: list of ['field' => …, 'operator' => …, 'value' => …]; older: field => value.
                 [$field, $value] = is_array($where) ? [$where['field'], $where['value']] : [$key, $where];
-                if (($doc[$field] ?? null) != $value) {
+                // A list matches when it contains the value, as Meilisearch, Typesense and Algolia do.
+                $have = $doc[$field] ?? null;
+                if (is_array($have) ? ! in_array($value, $have) : $have != $value) {
                     continue 2;
                 }
             }

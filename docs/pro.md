@@ -10,7 +10,8 @@ Pro is **$49**. Everything in Lite, plus:
 ## Craft's own search, answered by your engine
 
 Switch on **Replace Craft search** (`replaceCraftSearch`, off by default). Craft's own `.search()`
-on front-end element queries — live entries and assets in one indexed section or volume — is then
+on front-end element queries — live entries, assets and Commerce products, or active users, all
+covered by one index — is then
 answered by your search engine. Existing templates get the engine's relevance and typo tolerance
 with **no template changes**:
 

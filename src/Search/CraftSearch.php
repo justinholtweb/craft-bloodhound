@@ -12,6 +12,8 @@ use CraftCms\Cms\Search\Events\SearchPerformed;
 use CraftCms\Cms\Search\Search;
 use CraftCms\Cms\Site\Data\Site;
 use CraftCms\Cms\Support\Facades\Sites;
+use CraftCms\Cms\User\Elements\User;
+use CraftCms\Commerce\Product\Elements\Product;
 use Illuminate\Support\Facades\Log;
 use JustinHoltWeb\Bloodhound\Indexes\IndexDefinition;
 use JustinHoltWeb\Bloodhound\Indexes\Indexes;
@@ -114,6 +116,8 @@ class CraftSearch extends Search
         $type = match ($elementQuery->elementType) {
             Entry::class => 'entries',
             Asset::class => 'assets',
+            User::class => 'users',
+            Product::class => 'products', // a class name string, so Commerce needn't be installed
             default => null,
         };
 

@@ -70,7 +70,8 @@ builds both for each index.
 ## Your first index
 
 1. **Settings → Plugins → Bloodhound.** Add an index: a handle (`articles`), the element type
-   (entries or assets), the sections or volumes it covers, and the custom fields to copy into
+   (entries, assets, users or Commerce products), the sections, volumes, user groups or product
+   types it covers, and the custom fields to copy into
    each document.
 2. Import it:
 
@@ -81,5 +82,5 @@ builds both for each index.
 3. Search it from a template — see [Searching](/plugins/craft-bloodhound/docs/searching/).
 
 After the import, saves and deletes keep the index in sync. Run Laravel's scheduler so
-`craft:bloodhound:sync-scheduled` (every 15 minutes) catches entries whose post or expiry date
+`craft:bloodhound:sync-scheduled` (every 15 minutes) catches entries and products whose post or expiry date
 passes without anyone saving them.

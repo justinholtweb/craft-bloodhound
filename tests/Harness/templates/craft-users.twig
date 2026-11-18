@@ -1,0 +1,2 @@
+{# Bloodhound harness (Pro): Craft's own user .search(), answered by the engine when covered #}
+<p id="ids">{{ craft.users.group('staff').status(app('request').query('all') ? null : 'active').search(app('request').query('q')).orderBy('score desc').ids()|join(',') }}</p>

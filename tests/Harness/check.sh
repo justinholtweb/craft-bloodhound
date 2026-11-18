@@ -7,6 +7,8 @@
 set -uo pipefail
 exec < /dev/null
 H=/Users/jholt/Sites/plugin-testing-craft6
+SRC=$(cd "$(dirname "$0")" && pwd)
+cp "$SRC"/templates/find{.twig,-blade.blade.php} "$H/resources/views/bh/"
 U=https://plugin-testing-craft6.ddev.site
 cd "$H" || exit 2
 pass=0 fail=0
@@ -130,6 +132,63 @@ if [ "$DRIVER" = typesense ]; then
   settings "['indexes' => [['handle' => 'articles', 'elementType' => 'entries', 'sources' => 'articles', 'fields' => 'summary, customers']]]"
 fi
 
+# ---- Users ----
+# Fixture people (removed at the end): two in `staff`, one outside it, one whose username is an email address.
+UE='CraftCms\Cms\User\Elements\User'
+person() { tk "\$u=$UE::find()->username('$1')->status(null)->one() ?? new $UE; \$u->username='$1'; \$u->email='${4:-$1@bh.test}'; \$u->fullName='$2'; \$u->active=true; \$u->pending=false; CraftCms\Cms\Support\Facades\Elements::saveElement(\$u); CraftCms\Cms\Support\Facades\Users::assignUserToGroups(\$u->id, '$3' === '' ? [] : [CraftCms\Cms\Support\Facades\UserGroups::getGroupByHandle('$3')->id]); echo \$u->id;"; }
+uid() { tk "echo $UE::find()->username('$1')->status(null)->one()?->id;"; }
+ADA=$(person adal1815 'Ada Lovelace' staff); GRACE=$(person ghopper 'Grace Hopper' staff); person mcurie 'Marie Curie' '' >/dev/null
+MAIL=$(person 'mailperson@bh.test' 'Mail Person' staff 'mailperson@bh.test')
+# In the group but suspended: never indexed, and a query that could return them isn't the engine's to answer.
+LINUS=$(person lpauling 'Linus Lovelace' staff); tk "CraftCms\Cms\Support\Facades\Users::suspendUser($UE::find()->id($LINUS)->one()); echo 1;" >/dev/null
+settings "['indexes' => [['handle' => 'articles', 'elementType' => 'entries', 'sources' => 'articles', 'fields' => 'summary, customers'], ['handle' => 'people', 'elementType' => 'users', 'sources' => 'staff', 'fields' => '']]]"
+ddev artisan craft:bloodhound:import people --fresh >/dev/null 2>&1; settle
+fids() { curl -sk "$U/bh/$1?index=${2}&q=$3${4:-}" | grep -oE 'data-id="[0-9]+"' | grep -oE '[0-9]+' | sort -n | tr '\n' ' '; }
+for e in find find-blade; do
+  ok "users $e: found by surname" "$(fids $e people lovelace)" "$ADA "
+  ok "users $e: found by username" "$(fids $e people ghopper)" "$GRACE "
+done
+ok "users: a suspended user isn't indexed" "$(fids find people linus)" ""
+ok "users: a user outside the index's groups isn't indexed" "$(fids find people curie)" ""
+ok "users: shown by name" "$(curl -sk "$U/bh/find?index=people&q=lovelace" | grep -o '<li[^>]*>[^<]*' | sed 's/.*>//')" "Ada Lovelace"
+ok "users: email addresses are never searchable" "$(fids find people bh.test)" ""
+ok "users: an email used as username isn't indexed, the name is" "$(fids find people 'mail+person')/$(tk "echo json_encode(array_intersect_key(app(JustinHoltWeb\Bloodhound\Documents\DocumentBuilder::class)->build($UE::find()->id($MAIL)->one(), app(JustinHoltWeb\Bloodhound\Indexes\Indexes::class)->get('people')), array_flip(['title','username'])));")" "$MAIL /{\"title\":\"Mail Person\",\"username\":null}"
+ok "users: filter on group" "$(fids find people lovelace '&key=groups&value=staff')/$(fids find people lovelace '&key=groups&value=gold')" "$ADA /"
+ok "users: suspending removes the user" "$(tk "CraftCms\Cms\Support\Facades\Users::suspendUser($UE::find()->id($ADA)->one()); echo 1;" >/dev/null; settle; fids find people lovelace)" ""
+ok "users: unsuspending brings them back" "$(tk "CraftCms\Cms\Support\Facades\Users::unsuspendUser($UE::find()->id($ADA)->status(null)->one()); echo 1;" >/dev/null; settle; fids find people lovelace)" "$ADA "
+ok "users: leaving the group removes the user" "$(tk "CraftCms\Cms\Support\Facades\Users::assignUserToGroups($ADA, []); echo 1;" >/dev/null; settle; fids find people lovelace)" ""
+ok "users: joining the group adds them" "$(person adal1815 'Ada Lovelace' staff >/dev/null; settle; fids find people lovelace)" "$ADA "
+ok "users: a renamed user is found by the new name" "$(person ghopper 'Grace Brewster' staff >/dev/null; settle; fids find people brewster)" "$GRACE "
+person ghopper 'Grace Hopper' staff >/dev/null
+
+# ---- Products (only when Craft Commerce is installed and enabled in the harness) ----
+COMMERCE=$(tk "echo JustinHoltWeb\Bloodhound\Indexes\Indexes::commerceAvailable() ? 'yes' : 'no';")
+if [ "$COMMERCE" = yes ]; then
+  cp "$SRC"/commerce-fixtures.php "$SRC"/templates/craft-products{.twig,-blade.blade.php} "$H/resources/views/bh/"
+  P=$(tk "require 'resources/views/bh/commerce-fixtures.php';")
+  pid() { echo "$P" | grep -oE "\"$1\":[0-9]+" | grep -oE '[0-9]+$'; }
+  LAMP=$(pid lamp); TENT=$(pid tent); BOOK=$(pid book); OFF=$(pid off)
+  settings "['indexes' => [['handle' => 'articles', 'elementType' => 'entries', 'sources' => 'articles', 'fields' => 'summary, customers'], ['handle' => 'people', 'elementType' => 'users', 'sources' => 'staff', 'fields' => ''], ['handle' => 'shop', 'elementType' => 'products', 'sources' => 'gear', 'fields' => '']]]"
+  ddev artisan craft:bloodhound:import shop --fresh >/dev/null 2>&1; settle
+  for e in find find-blade; do
+    ok "products $e: found by title, only live products of the index's types" "$(fids $e shop lantern)" "$LAMP "
+    ok "products $e: found by a non-default variant's SKU" "$(fids $e shop LAMP-200)" "$LAMP "
+  done
+  ok "products: filter on product type" "$(fids find shop tent '&key=productType&value=gear')/$(fids find shop tent '&key=productType&value=books')" "$TENT /"
+  ok "products: filter on price" "$(fids find shop '' '&key=price&value=320')$(fids find shop alpine '&key=price&value=320')/$(fids find shop alpine '&key=price&value=1')" "$TENT /"
+  ok "products: document carries type, price and every SKU" "$(tk "\$d=app(JustinHoltWeb\Bloodhound\Documents\DocumentBuilder::class)->build(CraftCms\Commerce\Product\Elements\Product::find()->id($LAMP)->one(), app(JustinHoltWeb\Bloodhound\Indexes\Indexes::class)->get('shop')); echo \$d['productType'].'/'.\$d['price'].'/'.implode('|', \$d['sku']);")" "gear/49.5/LAMP-100|LAMP-200"
+  variant() { tk "\$v=CraftCms\Commerce\Product\Variant\Elements\Variant::find()->sku('$1')->status(null)->one(); \$v->setSku('$2'); echo CraftCms\Cms\Support\Facades\Elements::saveElement(\$v) ? 'saved' : json_encode(\$v->errors()->all());"; }
+  ok "products: saving just a variant re-syncs its product" "$(variant LAMP-200 LAMP-250; settle)/$(fids find shop LAMP-250)" "saved/$LAMP "
+  variant LAMP-250 LAMP-200 >/dev/null; settle
+  prod() { tk "\$p=CraftCms\Commerce\Product\Elements\Product::find()->id($1)->status(null)->one(); $2 echo CraftCms\Cms\Support\Facades\Elements::saveElement(\$p) ? 'saved' : json_encode(\$p->errors()->all());"; }
+  ok "products: disabling removes the product" "$(prod $TENT '$p->enabled = false;'; settle)/$(fids find shop alpine)" "saved/"
+  ok "products: re-enabling brings it back" "$(prod $TENT '$p->enabled = true;'; settle)/$(fids find shop alpine)" "saved/$TENT "
+  pdate() { tk "Illuminate\Support\Facades\DB::table('commerce_products')->where('id',$TENT)->update($1); echo 1;" >/dev/null; }
+  # Expiry and go-live save nothing, so no event fires: sync-scheduled has to notice.
+  ok "products: an expired product is removed by sync-scheduled" "$(pdate "['expiryDate'=>now()->utc()->subMinute()->format('Y-m-d H:i:s')]"; ddev artisan craft:bloodhound:sync-scheduled --since='-10 minutes' >/dev/null 2>&1; settle; fids find shop alpine)" ""
+  ok "products: a product that just went live is added by sync-scheduled" "$(pdate "['expiryDate'=>null,'postDate'=>now()->utc()->subMinute()->format('Y-m-d H:i:s')]"; ddev artisan craft:bloodhound:sync-scheduled --since='-10 minutes' >/dev/null 2>&1; settle; fids find shop alpine)" "$TENT "
+fi
+
 # ---- Pro ----
 cp "$(dirname "$0")/templates/craft.twig" "$(dirname "$0")/templates/craft-blade.blade.php" "$H/resources/views/bh/" 2>/dev/null \
   || cp /Users/jholt/Sites/craft-bloodhound/tests/Harness/templates/craft{.twig,-blade.blade.php} "$H/resources/views/bh/"
@@ -193,11 +252,30 @@ if [ "$DRIVER" != harness ]; then
   ddev artisan queue:work --queue=default --stop-when-empty >/dev/null 2>&1
   ok "pro: CP Rebuild (swap) queued and ran" "$(post -d index=articles -d site=default "$U/admin/bloodhound/rebuild")/$(ddev artisan queue:work --queue=default --stop-when-empty >/dev/null 2>&1; settle; counts)" "302/0/0/0"
 fi
+# Pro takeover for users: covered when every candidate is an active user of the index's groups.
+cp "$SRC"/templates/craft-users{.twig,-blade.blade.php} "$H/resources/views/bh/"
+for e in craft-users craft-users-blade; do
+  [ "$DRIVER" != harness ] && ok "pro $e: user .search() answered by the engine (typo tolerant)" "$(cids $e lovelce)" "$ADA"
+  ok "pro $e: exact name" "$(cids $e lovelace)" "$ADA"
+done
+[ "$DRIVER" != harness ] && ok "pro: user query including inactive users falls back to Craft" "$(cids craft-users lovelce '&all=1')" ""
+if [ "$COMMERCE" = yes ]; then
+  for e in craft-products craft-products-blade; do
+    [ "$DRIVER" != harness ] && ok "pro $e: product .search() answered by the engine (typo tolerant)" "$(cids $e lantrn)" "$LAMP"
+    ok "pro $e: exact SKU" "$(cids $e LAMP-200)" "$LAMP"
+  done
+  [ "$DRIVER" != harness ] && ok "pro: product query including disabled products falls back to Craft" "$(cids craft-products lantrn '&all=1')" ""
+fi
 settings "['replaceCraftSearch' => false]"
 edition lite
 
 ok "settings page loads" "$(curl -sk -b "$J" -o /dev/null -w '%{http_code}' "$U/admin/settings/plugins/bloodhound")" "200"
 
 entry second-article-2 '$e->setFieldValue("summary", "The related one.");' >/dev/null
+for n in adal1815 ghopper mcurie lpauling mailperson@bh.test; do tk "\$u=$UE::find()->username('$n')->status(null)->one(); if (\$u) CraftCms\Cms\Support\Facades\Elements::deleteElement(\$u, true); echo 1;" >/dev/null; done
+ok "users: deleted users leave the index" "$(settle; fids find people lovelace)" ""
+ddev artisan craft:bloodhound:flush people >/dev/null 2>&1
+[ "$COMMERCE" = yes ] && ddev artisan craft:bloodhound:flush shop >/dev/null 2>&1
+settings "['indexes' => [['handle' => 'articles', 'elementType' => 'entries', 'sources' => 'articles', 'fields' => 'summary, customers']]]"
 echo "$pass passed, $fail failed"
 [ "$fail" = 0 ]

@@ -16,8 +16,8 @@ Each row is one index:
 | Column | What it does |
 | --- | --- |
 | **Handle** | Lower-case letters, numbers and underscores, starting with a letter (`articles`). Used in templates and commands. |
-| **Elements** | `Entries` or `Assets`. |
-| **Sections / volumes** | Section handles (entries) or volume handles (assets), comma-separated. Empty means all of them. Nested entries (Matrix) are never indexed on their own. |
+| **Elements** | `Entries`, `Assets`, `Users` or `Products (Commerce)`. |
+| **Sections / volumes / groups / product types** | Section handles (entries), volume handles (assets), user group handles (users) or product type handles (products), comma-separated. Empty means all of them. Nested entries (Matrix) are never indexed on their own. |
 | **Fields to index** | Custom field handles copied into each document, in ranking order. |
 
 Every index is kept **per site** in the engine, named `{scout prefix}{index prefix}{handle}_{site}`
@@ -27,8 +27,16 @@ Run `craft:bloodhound:import` after adding or changing an index.
 
 ### What goes into a document
 
-Every document carries `id`, `title`, `url`, `siteId` and `dateUpdated`. Entries add `section`,
-`type` and `postDate`; assets add `volume`, `kind`, `filename` and `alt`. Then each field you list:
+Every document carries `id`, `title`, `url`, `siteId` and `dateUpdated`. Then, by element type:
+
+| Elements | Searched as text | Filter with `where` | Sort |
+| --- | --- | --- | --- |
+| Entries | title | `section`, `type` | `postDate` |
+| Assets | title, `filename`, `alt` | `volume`, `kind` | — |
+| Users | full name (as the title), `username` | `groups` | — |
+| Products | title, `sku` (every enabled variant's SKU) | `productType`, `price` | `postDate`, `price` |
+
+Then each field you list:
 
 - rich text and HTML become plain text (capped at 20,000 characters)
 - relations become the related elements' names
@@ -36,6 +44,25 @@ Every document carries `id`, `title`, `url`, `siteId` and `dateUpdated`. Entries
 
 **Only live elements are indexed** — enabled, for that site, with a post date in the past and no
 expiry date passed. Disabled, pending, expired and deleted elements are removed from the index.
+For users that means **active** accounts: pending, inactive and suspended users are left out.
+
+### Users
+
+A user index holds each user's full name and username, plus the custom fields you list. **Email
+addresses are never indexed**, and neither is a username that is an email address (sites with
+`useEmailAsUsername`); those users are found by their name. If you search users from a public page,
+list only fields you'd show publicly.
+
+Users stay in step when they're saved or deleted, and also when they're suspended, unsuspended,
+activated, deactivated or moved between groups — Craft doesn't save the user for those, so
+Bloodhound listens for them separately.
+
+### Products
+
+Product indexes need **Craft Commerce** installed and enabled. Without it, a product index is skipped
+(with a warning in the log) and every other index keeps working. A product's `price` is its default
+price, and saving a single variant re-syncs its product. Scheduled and expiring products are caught
+by `craft:bloodhound:sync-scheduled`, like entries.
 
 ## Index prefix
 

@@ -44,8 +44,9 @@ template global.
 | `site` | current site | A site handle. Each site has its own index. |
 | `where` | none | Attribute → value, e.g. `{section: 'news'}`. |
 
-Filterable attributes are `siteId`, `section` and `type` for entries, and `siteId`, `volume` and
-`kind` for assets. `import` declares them to Meilisearch and Typesense for you. Filter values are
+Filterable attributes are `siteId` plus `section` and `type` for entries, `volume` and `kind` for
+assets, `groups` for users (matches users in that group) and `productType` and `price` for
+products. `import` declares them to Meilisearch and Typesense for you. Filter values are
 always matched literally, so passing a visitor's input straight into `where` can't widen the
 filter.
 
@@ -64,7 +65,7 @@ deleted element.
 ## What a query matches
 
 The title first, then the index's fields in the order you listed them (assets also match their
-filename and alt text). URLs and handles are not searched, on any engine — so results don't depend
+filename and alt text, users their username, products every variant's SKU). URLs and handles are not searched, on any engine — so results don't depend
 on which engine you run.
 
 ## When the engine is down

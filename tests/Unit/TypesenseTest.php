@@ -52,3 +52,29 @@ it('quotes string filter values so they stay literal', function () {
         ->and(TypesenseSchema::filterValue(3))->toBe(3)
         ->and(TypesenseSchema::filterValue(true))->toBeTrue();
 });
+
+it('gives users and products their own text, filters and sorts', function () {
+    $users = new IndexDefinition('people', 'users', ['members'], ['bio', 'groups']);
+    $products = new IndexDefinition('shop', 'products', [], ['description', 'price']);
+
+    expect($users->searchableAttributes())->toBe(['title', 'username', 'bio'])
+        ->and($users->filterableAttributes())->toBe(['siteId', 'groups'])
+        ->and($products->searchableAttributes())->toBe(['title', 'sku', 'description'])
+        ->and($products->filterableAttributes())->toBe(['siteId', 'productType', 'price'])
+        ->and($products->sortableAttributes())->toBe(['dateUpdated', 'postDate', 'price'])
+        ->and(IndexDefinition::fromRow(['handle' => 'shop', 'elementType' => 'products']))->not->toBeNull()
+        ->and(IndexDefinition::fromRow(['handle' => 'x', 'elementType' => 'orders']))->toBeNull();
+});
+
+it('declares typed Typesense fields for users and products', function () {
+    $users = array_column(TypesenseSchema::collection('u', new IndexDefinition('people', 'users', [], ['bio']))['fields'], null, 'name');
+    $products = array_column(TypesenseSchema::collection('p', new IndexDefinition('shop', 'products', [], []))['fields'], null, 'name');
+
+    expect($users['groups']['type'])->toBe('string[]')
+        ->and($users['username']['type'])->toBe('string')
+        ->and($users)->not->toHaveKey('email')
+        ->and($products['price']['type'])->toBe('float')
+        ->and($products['sku']['type'])->toBe('string[]')
+        ->and(TypesenseSchema::document(['id' => 3, 'sku' => ['A-1', 'A-2'], 'price' => 9.5], new IndexDefinition('shop', 'products', [], [])))
+        ->toBe(['id' => '3', 'sku' => ['A-1', 'A-2'], 'price' => 9.5]);
+});

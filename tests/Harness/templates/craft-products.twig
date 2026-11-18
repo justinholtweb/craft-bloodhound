@@ -1,0 +1,2 @@
+{# Bloodhound harness (Pro): Commerce's product .search(), answered by the engine when covered #}
+<p id="ids">{{ products().type('gear').status(app('request').query('all') ? null : 'live').search(app('request').query('q')).orderBy('score desc').ids()|join(',') }}</p>

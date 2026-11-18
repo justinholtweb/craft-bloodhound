@@ -1,6 +1,6 @@
 {
     "name": "justinholtweb/craft-bloodhound",
-    "description": "Laravel Scout for Craft elements — index entries, assets, users or products into Meilisearch, Typesense, Algolia or the database driver.",
+    "description": "Laravel Scout for Craft elements — index entries, assets, users or Commerce products into Meilisearch, Typesense, Algolia or the database driver.",
     "type": "craft-plugin",
     "version": "6.0.0-beta.1",
     "keywords": [
@@ -26,6 +26,7 @@
         "laravel/scout": "^11.0"
     },
     "require-dev": {
+        "craftcms/commerce": "6.x-dev",
         "larastan/larastan": "^3.13",
         "laravel/pint": "^1.22",
         "meilisearch/meilisearch-php": "^1.10",
@@ -34,6 +35,12 @@
         "pestphp/pest-plugin-laravel": "^5.0",
         "phpstan/phpstan": "^2.1",
         "typesense/typesense-php": "^6.0"
+    },
+    "suggest": {
+        "meilisearch/meilisearch-php": "Meilisearch engine",
+        "typesense/typesense-php": "Typesense engine",
+        "algolia/algoliasearch-client-php": "Algolia engine",
+        "craftcms/commerce": "Needed to index Commerce products"
     },
     "autoload": {
         "psr-4": {
@@ -73,10 +80,5 @@
         "documentationUrl": "https://github.com/justinholtweb/craft-bloodhound",
         "changelogUrl": "https://raw.githubusercontent.com/justinholtweb/craft-bloodhound/main/CHANGELOG.md",
         "class": "JustinHoltWeb\\Bloodhound\\Plugin"
-    },
-    "suggest": {
-        "meilisearch/meilisearch-php": "Meilisearch engine",
-        "typesense/typesense-php": "Typesense engine",
-        "algolia/algoliasearch-client-php": "Algolia engine"
     }
 }

@@ -20,6 +20,9 @@ use JustinHoltWeb\Bloodhound\Settings;
  */
 class Indexes
 {
+    /** @var array<string, true> Indexes already warned about, so the log isn't flooded. */
+    private static array $warned = [];
+
     public function __construct(private readonly Settings $settings) {}
 
     /**
@@ -38,7 +41,8 @@ class Indexes
             }
 
             if ($index->elementType === 'products' && ! self::commerceAvailable()) {
-                Log::warning("Bloodhound: index “{$index->handle}” holds products, but Craft Commerce isn't installed and enabled; skipping it.");
+                isset(self::$warned[$index->handle]) || Log::warning("Bloodhound: index “{$index->handle}” holds products, but Craft Commerce isn't installed and enabled; skipping it.");
+                self::$warned[$index->handle] = true;
 
                 continue;
             }

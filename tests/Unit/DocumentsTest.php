@@ -16,7 +16,7 @@ it('parses index rows and rejects bad ones', function () {
         ->and($index?->fields)->toBe(['summary', 'body'])
         ->and($index?->engineIndexName('prod_', 'en'))->toBe('prod_articles_en')
         ->and(IndexDefinition::fromRow(['handle' => 'Articles']))->toBeNull()
-        ->and(IndexDefinition::fromRow(['handle' => 'articles', 'elementType' => 'users']))->toBeNull()
+        ->and(IndexDefinition::fromRow(['handle' => 'articles', 'elementType' => 'categories']))->toBeNull()
         ->and(IndexDefinition::fromRow(['handle' => 'a-b']))->toBeNull();
 });
 

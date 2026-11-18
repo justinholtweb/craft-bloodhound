@@ -85,9 +85,6 @@ final class TypesenseSchema
             $document['id'] = (string) $document['id'];
         }
 
-        // A product without a price has a null one; Typesense wants the field absent.
-        $document = array_filter($document, fn ($value, $key) => $value !== null || ! in_array($key, ['price', 'username', 'postDate'], true), ARRAY_FILTER_USE_BOTH);
-
         $text = array_flip(array_diff($index->fields, [...IndexDefinition::ATTRIBUTES, 'title', ...$index->builtInText()]));
 
         foreach ($document as $key => $value) {

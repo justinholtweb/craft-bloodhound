@@ -1,6 +1,6 @@
 # Bloodhound
 
-Laravel Scout for Craft elements — index entries, assets, users or products into Meilisearch, Typesense, Algolia or the database driver.
+Laravel Scout for Craft elements — index entries, assets, users or Commerce products into Meilisearch, Typesense, Algolia or the database driver.
 
 > [!WARNING]
 > **Craft 6 only, and in beta.** Bloodhound is a native **Craft CMS 6** plugin. Craft 6 is still in beta,
@@ -21,9 +21,9 @@ Docs: [justinholt.com/plugins/craft-bloodhound](https://justinholt.com/plugins/c
    `MEILISEARCH_KEY` and `composer require meilisearch/meilisearch-php`, or `SCOUT_DRIVER=typesense` with
    `TYPESENSE_HOST`, `TYPESENSE_API_KEY` and `composer require typesense/typesense-php`. You don't write a
    Typesense collection schema or `query_by` in `config/scout.php`: Bloodhound builds them per index.
-2. Settings → Bloodhound: add an index (handle, entries or assets, which sections/volumes, which fields).
+2. Settings → Bloodhound: add an index (handle, element type — entries, assets, users or Commerce products — which sections/volumes/groups/product types, which fields).
 3. `php artisan craft:bloodhound:import` — after that, saves and deletes keep it in sync. Schedule Laravel's
-   scheduler: `craft:bloodhound:sync-scheduled` runs every 15 minutes to catch entries that go live or expire.
+   scheduler: `craft:bloodhound:sync-scheduled` runs every 15 minutes to catch entries and products that go live or expire.
 
 Only **live** elements are indexed, and hits are re-read through a live-only element query, so stale
 documents can never surface disabled, expired or deleted content.

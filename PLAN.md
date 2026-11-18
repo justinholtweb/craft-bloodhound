@@ -1,6 +1,6 @@
 # Bloodhound — plan
 
-Laravel Scout for Craft elements — index entries, assets, users or products into Meilisearch, Typesense, Algolia or the database driver.
+Laravel Scout for Craft elements — index entries, assets, users or Commerce products into Meilisearch, Typesense, Algolia or the database driver.
 
 - Package: `justinholtweb/craft-bloodhound` · handle `bloodhound` · namespace `JustinHoltWeb\Bloodhound`
 - Editions: Lite / Pro · pricing: Lite free / Pro $49
@@ -63,7 +63,23 @@ engine works unchanged.
 - Branding: icon traced from Justin's artwork (src/icon.jpg) with potrace onto the family tile, #572261.
   Marketing site: justinholt.com/plugins/craft-bloodhound (staged, `showOnSite` false), docs in docs/,
   promos in promos/.
-- Open: Algolia (needs a paid account to verify).
+- **2026-11-18 — Users and Commerce products.** Per-type text/filter/sort lists live on `IndexDefinition`
+  (`builtInText`, `filterableAttributes`, `sortableAttributes`) and feed Meilisearch settings and Typesense
+  schemas. Users: active only, scoped by group; title = full name (else username); email never indexed, nor a
+  username containing `@`. Suspend/unsuspend/activate/deactivate and group assignment don't save the
+  element, so `UserSuspended`, `UserUnsuspended`, `UserActivated`, `UserDeactivated` and
+  `UserAssignedToGroups` re-sync too. Products: `CraftCms\Commerce\Product\Elements\Product` (Commerce 6.x
+  is native, no yii2), live only, scoped by product type; `sku` = every enabled variant's SKU, `price` =
+  default price. A variant save resolves to its product; the listener is `scoped` and dedupes per
+  request so a product save's variant saves don't queue N jobs. Without Commerce, product indexes are
+  skipped with one log warning. `craft/commerce` 6.x-dev is require-dev only (Larastan).
+- Harness: Commerce 6.x-dev needs `craftcms/cms` 6.x-dev, so products were verified on a temporary
+  upgrade (snapshot `bh-pre-commerce`, then restored to beta.1). Product checks run only when Commerce is
+  enabled; `tests/Harness/commerce-fixtures.php` seeds `gear`/`books` types and four products. With Commerce:
+  file engine 91, Meilisearch 110, Typesense 115 (+2 CP 500s from Commerce dev's unbuilt Vite assets —
+  environment). On beta.1 without Commerce: 79 / 95 / 100, all green.
+- Open: Algolia (needs a paid account to verify). Scout's `database` driver is listed but has never been
+  run against Bloodhound's table-less `SearchDocument` — verify or drop it from the engine list.
 
 ## Phases
 1. **Indexes (Lite).** CP-defined indexes: element type, sources (sections/volumes/groups), condition builder,
