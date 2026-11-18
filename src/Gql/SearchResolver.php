@@ -13,9 +13,13 @@ use CraftCms\Cms\Gql\Resolvers\Elements\User as UserResolver;
 use CraftCms\Cms\Site\Data\Site;
 use CraftCms\Commerce\Gql\Resolvers\Elements\Product as ProductResolver;
 use GraphQL\Error\UserError;
+use Illuminate\Support\Facades\Log;
 use JustinHoltWeb\Bloodhound\Indexes\IndexDefinition;
 use JustinHoltWeb\Bloodhound\Indexes\Indexes;
 use JustinHoltWeb\Bloodhound\Search\Bloodhound;
+use Throwable;
+
+use function CraftCms\Cms\t;
 
 class SearchResolver
 {
@@ -50,24 +54,65 @@ class SearchResolver
         $site = self::site(isset($args['site']) ? (string) $args['site'] : null);
         $where = [];
         foreach ($args['where'] ?? [] as $filter) {
-            $where[(string) $filter['attribute']] = (string) $filter['value'];
+            $attribute = (string) $filter['attribute'];
+
+            // Ignoring an unknown filter would widen the results, so it's an error instead.
+            if (! in_array($attribute, $index->filterableAttributes(), true)) {
+                throw new UserError("“{$attribute}” isn’t a filterable attribute of the “{$handle}” index. Filterable: ".implode(', ', $index->filterableAttributes()).'.');
+            }
+
+            $where[$attribute] = (string) $filter['value'];
         }
 
-        $results = app(Bloodhound::class)->search($handle, (string) $args['query'], [
-            'site' => $site->handle,
-            'page' => $args['page'] ?? 1,
-            'perPage' => $args['perPage'] ?? 20,
-            'where' => $where,
-        ]);
+        $bloodhound = app(Bloodhound::class);
+        $page = max(1, (int) ($args['page'] ?? 1));
+        $perPage = min(100, max(1, (int) ($args['perPage'] ?? 20)));
+        $scope = self::scope($index, $site);
+
+        // The schema can read everything the index holds: the engine's counts and pages are exact.
+        if ($scope !== null && self::coversIndex($index, $site, $scope)) {
+            $results = $bloodhound->search($handle, (string) $args['query'], [
+                'site' => $site->handle, 'page' => $page, 'perPage' => $perPage, 'where' => $where,
+            ]);
+
+            return [
+                'elements' => $results->elements,
+                'total' => $results->total,
+                'page' => $results->page,
+                'perPage' => $results->perPage,
+                'pages' => $results->pages(),
+                'query' => $results->query,
+                'error' => $results->error,
+            ];
+        }
+
+        // Otherwise the engine's counts would include elements this schema can't read
+        // (and reveal that they match), so count and page only the readable hits.
+        $text = $bloodhound->queryText((string) $args['query']);
+        $readable = [];
+        $error = null;
+
+        if ($scope !== null && $text !== '') {
+            try {
+                $ranked = $bloodhound->rankedIds($index, $site->handle, $text, self::MAX_HITS, $where);
+                $allowed = array_flip(self::readableIds($scope, $site, $ranked));
+                $readable = array_values(array_filter($ranked, fn (int $id) => isset($allowed[$id])));
+            } catch (Throwable $e) {
+                Log::warning("Bloodhound GraphQL search on {$handle} failed: {$e->getMessage()}");
+                $error = t('Search is temporarily unavailable.', category: 'bloodhound');
+            }
+        }
+
+        $total = count($readable);
 
         return [
-            'elements' => self::visible($index, $site, $results->elements),
-            'total' => $results->total,
-            'page' => $results->page,
-            'perPage' => $results->perPage,
-            'pages' => $results->pages(),
-            'query' => $results->query,
-            'error' => $results->error,
+            'elements' => $bloodhound->hydrate($index, $site->handle, array_slice($readable, ($page - 1) * $perPage, $perPage)),
+            'total' => $total,
+            'page' => $page,
+            'perPage' => $perPage,
+            'pages' => (int) ceil($total / $perPage),
+            'query' => $text,
+            'error' => $error,
         ];
     }
 
@@ -89,20 +134,19 @@ class SearchResolver
         throw new UserError($handle === null ? 'This schema can’t read any site.' : "This schema can’t read the “{$handle}” site.");
     }
 
-    /**
-     * The hits this schema may read, still in rank order: each element type's own
-     * GraphQL resolver decides (sections, volumes, user groups, product types, and
-     * for authenticated tokens, what that user may view).
-     *
-     * @param  list<ElementInterface>  $elements
-     * @return list<ElementInterface>
-     */
-    private static function visible(IndexDefinition $index, Site $site, array $elements): array
-    {
-        if ($elements === []) {
-            return [];
-        }
+    /** Hits counted when the schema can't read the whole index (as Pro's `.search()` takeover). */
+    public const int MAX_HITS = 1000;
 
+    /**
+     * The element query this schema may read for the index's element type, as
+     * Craft's (or Commerce's) own GraphQL resolver builds it: sections, volumes,
+     * user groups, product types, and for authenticated tokens what that user
+     * may view. Null when the schema can't read that element type at all.
+     *
+     * @return ElementQueryInterface<covariant ElementInterface>|null
+     */
+    private static function scope(IndexDefinition $index, Site $site): ?ElementQueryInterface
+    {
         $query = match ($index->elementType) {
             'entries' => GqlHelper::canQueryEntries() ? EntryResolver::prepareQuery(null, []) : null,
             'assets' => GqlHelper::canQueryAssets() ? AssetResolver::prepareQuery(null, []) : null,
@@ -111,13 +155,24 @@ class SearchResolver
             default => null,
         };
 
-        if (! $query instanceof ElementQueryInterface) {
-            return [];
-        }
+        return $query instanceof ElementQueryInterface ? $query->site($site->handle) : null;
+    }
 
-        $ids = array_map(fn (ElementInterface $e) => (int) $e->id, $elements);
-        $allowed = array_flip(array_map(intval(...), $query->site($site->handle)->id($ids)->ids()));
+    /** Whether every live element of the index is readable by the schema. */
+    private static function coversIndex(IndexDefinition $index, Site $site, ElementQueryInterface $scope): bool
+    {
+        $live = app(Indexes::class)->query($index, $site->handle);
+        $total = (clone $live)->count();
 
-        return array_values(array_filter($elements, fn (ElementInterface $e) => isset($allowed[(int) $e->id])));
+        return $total === 0 || (clone $scope)->id((clone $live)->ids())->count() === $total;
+    }
+
+    /**
+     * @param  list<int>  $ids
+     * @return list<int>
+     */
+    private static function readableIds(ElementQueryInterface $scope, Site $site, array $ids): array
+    {
+        return $ids === [] ? [] : array_map(intval(...), (clone $scope)->id($ids)->ids());
     }
 }

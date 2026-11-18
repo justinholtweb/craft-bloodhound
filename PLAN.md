@@ -84,7 +84,7 @@ engine works unchanged.
   (`GqlSchemaComponentsResolving`); no component → query absent; unknown and disallowed indexes give the same
   error. Hits are filtered through Craft's/Commerce's own GraphQL resolvers (`Entry/Asset/User/Product
   ::prepareQuery(null, [])`, all public) so section/volume/group/product-type scope and token-user `editable()`
-  apply. `total` counts the whole index (documented). Settings save invalidates GraphQL caches. Pro's
+  apply. Counts: engine totals only when the schema reads the whole index (count check); otherwise top 1,000 ranked ids → readable subset → counted and paged locally, so unreadable matches never leak as numbers (security review finding). `where` must name a filterable attribute (UserError). Settings save invalidates GraphQL caches. Pro's
   `CraftSearch` takeover already covers GraphQL `search:` (verified incl. `orderBy: "score desc"`;
   `searchTermOptions` turns search into an array → Craft). Harness: `gql-fixtures.php` (3 schemas/tokens,
   cleaned up at the end); with Commerce, products over GraphQL verified too. 114 / 119 / 97 green on beta.1.

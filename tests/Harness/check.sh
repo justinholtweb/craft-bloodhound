@@ -183,7 +183,23 @@ ok "gql: users index, fields through UserInterface" "$(gq full '{ bloodhoundSear
 ok "gql: no email over GraphQL search either" "$(gq full '{ bloodhoundSearch(index: "people", query: "bh.test") { total } }' 'r["data"]["bloodhoundSearch"]["total"]')" "0"
 ok "gql: schema without the index has no bloodhoundSearch query" "$(gq noindex '{ bloodhoundSearch(index: "articles", query: "momentum") { total } }' 'r["data"]')" "ERR:Cannot query field \"bloodhoundSearch\" on type \"Query\"."
 ok "gql: an index the schema lacks reads the same as an unknown one" "$(gq nosection '{ a: bloodhoundSearch(index: "people", query: "x") { total } }' '0')/$(gq nosection '{ bloodhoundSearch(index: "nosuch", query: "x") { total } }' '0')" "ERR:This schema can’t search the “people” index./ERR:This schema can’t search the “nosuch” index."
-ok "gql: hits the schema can't read are filtered out (index allowed, section not)" "$(gq nosection '{ bloodhoundSearch(index: "articles", query: "momentum") { total elements { id } } }' 'j(b["total"], len(b["elements"]))')" "2/0"
+ok "gql: hits the schema can't read are filtered out, and not counted" "$(gq nosection '{ bloodhoundSearch(index: "articles", query: "momentum") { total pages elements { id } } }' 'j(b["total"], b["pages"], len(b["elements"]))')" "0/0/0"
+# Partly readable index: `mixed` holds articles and notes; the `full` schema reads articles only.
+NOTE=$(tk "echo CraftCms\Cms\Entry\Elements\Entry::find()->section('notes')->one()->id;")
+NOTE_SUMMARY=$(tk "echo json_encode(CraftCms\Cms\Entry\Elements\Entry::find()->id($NOTE)->one()->getFieldValue('summary'));")
+note() { tk "\$e=CraftCms\Cms\Entry\Elements\Entry::find()->id($NOTE)->status(null)->one(); \$e->setFieldValue('summary', json_decode('$1')); echo CraftCms\Cms\Support\Facades\Elements::saveElement(\$e, false) ? 'saved' : 'failed';"; }
+settings "['indexes' => [['handle' => 'articles', 'elementType' => 'entries', 'sources' => 'articles', 'fields' => 'summary, customers'], ['handle' => 'people', 'elementType' => 'users', 'sources' => 'staff', 'fields' => ''], ['handle' => 'mixed', 'elementType' => 'entries', 'sources' => 'articles, notes', 'fields' => 'summary']]]"
+note '"A momentum journal."' >/dev/null
+ddev artisan craft:bloodhound:import mixed --fresh >/dev/null 2>&1; settle; tk "require 'storage/bh-gql-fixtures.php';" >/dev/null
+tk "\$s=collect(CraftCms\Cms\Support\Facades\Gql::getSchemas())->first(fn(\$s)=>\$s->name==='bh_full'); \$s->scope=[...\$s->scope, 'bloodhound.mixed:read']; CraftCms\Cms\Support\Facades\Gql::saveSchema(\$s); CraftCms\Cms\Support\Facades\Gql::invalidateCaches(); echo 1;" >/dev/null
+ok "gql: partly readable index — Twig sees all 3 matches" "$(fids find mixed momentum | wc -w | tr -d ' ')" "3"
+ok "gql: partly readable index — total, pages and elements count only readable hits" "$(gq full '{ bloodhoundSearch(index: "mixed", query: "momentum", perPage: 1) { total pages elements { id } } }' 'j(b["total"], b["pages"], len(b["elements"]))')" "2/2/1"
+ok "gql: partly readable index — page 2 is the second readable hit, never the note" "$(gq full '{ a: bloodhoundSearch(index: "mixed", query: "momentum", perPage: 1, page: 1) { elements { id } } b: bloodhoundSearch(index: "mixed", query: "momentum", perPage: 1, page: 2) { elements { id } } }' '",".join(sorted([d["a"]["elements"][0]["id"], d["b"]["elements"][0]["id"]]))')" "2,8"
+ok "gql: partly readable index — the note alone matches nothing for this schema" "$(gq full '{ bloodhoundSearch(index: "mixed", query: "journal") { total elements { id } } }' 'j(b["total"], len(b["elements"]))')" "0/0"
+ok "gql: a filter on a non-filterable attribute is an error, not a wider search" "$(gq full '{ bloodhoundSearch(index: "articles", query: "momentum", where: [{attribute: "url", value: "x"}]) { total } }' '0' | grep -c 'url” isn’t a filterable attribute')" "1"
+note "$NOTE_SUMMARY" >/dev/null
+ddev artisan craft:bloodhound:flush mixed >/dev/null 2>&1
+settings "['indexes' => [['handle' => 'articles', 'elementType' => 'entries', 'sources' => 'articles', 'fields' => 'summary, customers'], ['handle' => 'people', 'elementType' => 'users', 'sources' => 'staff', 'fields' => '']]]"
 ok "gql: a site the schema can't read is refused" "$(gq full '{ bloodhoundSearch(index: "articles", query: "momentum", site: "nope") { total } }' '0')" "ERR:This schema can’t read the “nope” site."
 ok "gql: an edit shows up (GraphQL cache invalidated)" "$(gq full '{ bloodhoundSearch(index: "articles", query: "aerostats") { total } }' 'r["data"]["bloodhoundSearch"]["total"]')/$(entry second-article-2 '$e->setFieldValue("summary", "Now about aerostats.");' >/dev/null; settle; gq full '{ bloodhoundSearch(index: "articles", query: "aerostats") { elements { id } } }' "$ids_of")" "0/10"
 entry second-article-2 '$e->setFieldValue("summary", "Now about zeppelins.");' >/dev/null; settle

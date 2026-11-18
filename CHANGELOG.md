@@ -18,5 +18,5 @@
 - Scout's `database` and `collection` drivers are refused with a clear message: they search model tables and can't hold Bloodhound's documents.
 - Every engine searches the same fields (title, then the index's fields), so results don't depend on the engine.
 - `bloodhound.search()` for Twig and `$bloodhound->search()` for Blade, returning live elements in rank order.
-- GraphQL: a `bloodhoundSearch` query (Lite and Pro). Each index is a schema permission, and hits are limited to elements the schema can read.
+- GraphQL: a `bloodhoundSearch` query (Lite and Pro). Each index is a schema permission; hits, totals and pages only ever count elements the schema can read, and filters must name a filterable attribute.
 - Pro: GraphQL's `search:` argument on entries, assets, users and products is answered by the engine, like `.search()` in templates.

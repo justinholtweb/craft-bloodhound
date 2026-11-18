@@ -33,7 +33,7 @@ Pro also answers GraphQL's own `search:` argument from your engine.
 | `site` | the schema's primary site | A site handle the schema can read. |
 | `page` | `1` | |
 | `perPage` | `20` | Capped at 100. |
-| `where` | none | Filters on filterable attributes: `[{attribute: "section", value: "news"}]`. Values match literally. |
+| `where` | none | Filters on the index's filterable attributes: `[{attribute: "section", value: "news"}]`. Values match literally; any other attribute is an error. |
 
 `elements` are real Craft elements in rank order, typed as `ElementInterface`. Ask for their fields
 with fragments: `... on EntryInterface`, `... on AssetInterface`, `... on UserInterface`, or
@@ -52,8 +52,10 @@ GraphQL rules for each element type — sections, volumes, user groups and Comme
 and for token-authenticated requests, what that user may view. A schema allowed to search an index
 of `news` entries but not to read the `news` section gets no elements back.
 
-`total` and `pages` count every match in the index, so give a schema an index only if it can read
-what the index holds.
+**Counts never include what the schema can't read.** When the schema can read everything in the
+index, `total` and `pages` come straight from the engine. When it can read only part of it,
+Bloodhound takes the top 1,000 matches, keeps the readable ones, and counts and pages those, so a
+match in a section the schema can't see never shows up, not even as a number.
 
 User indexes never contain email addresses, so a user search can't find anyone by email over
 GraphQL either.

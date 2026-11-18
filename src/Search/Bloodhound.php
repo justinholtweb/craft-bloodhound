@@ -16,6 +16,7 @@ use JustinHoltWeb\Bloodhound\Plugin;
 use JustinHoltWeb\Bloodhound\Settings;
 use JustinHoltWeb\Bloodhound\Sync\Indexer;
 use Laravel\Scout\Builder;
+use Laravel\Scout\Engines\Engine;
 use Laravel\Scout\Engines\TypesenseEngine;
 use Throwable;
 
@@ -53,12 +54,7 @@ class Bloodhound
             $builder = new Builder(SearchDocument::for($this->indexer->engineIndex($definition, $site), [], $definition), $query);
 
             $engine = $builder->model->searchableUsing();
-
-            foreach (is_array($options['where'] ?? null) ? $options['where'] : [] as $attribute => $value) {
-                if (is_string($attribute) && preg_match('/^[A-Za-z_][A-Za-z0-9_]{0,63}$/D', $attribute) && is_scalar($value)) {
-                    $builder->where($attribute, $engine instanceof TypesenseEngine ? TypesenseSchema::filterValue($value) : $value);
-                }
-            }
+            self::applyWhere($builder, $engine, $options['where'] ?? null);
 
             $raw = $engine->paginate($builder, $perPage, $page);
             $ids = array_map(intval(...), $engine->mapIds($raw)->all());
@@ -78,12 +74,14 @@ class Bloodhound
      * Element ids in engine rank order, up to `$max`, for one index and site.
      * Unlike `search()` this throws on an engine failure, so callers can fall back.
      *
+     * @param  array<array-key, mixed>|null  $where  As `search()`'s `where` option
      * @return list<int>
      */
-    public function rankedIds(IndexDefinition $index, string $site, string $query, int $max = 1000): array
+    public function rankedIds(IndexDefinition $index, string $site, string $query, int $max = 1000, ?array $where = null): array
     {
         $builder = new Builder(SearchDocument::for($this->indexer->engineIndex($index, $site), [], $index), $this->queryText($query));
         $engine = $builder->model->searchableUsing();
+        self::applyWhere($builder, $engine, $where);
         $ids = [];
         $perPage = 250; // Typesense's per_page ceiling
 
@@ -120,10 +118,28 @@ class Bloodhound
     }
 
     /**
+     * Filters from template or API input (untrusted): identifier-safe attribute
+     * names, scalar values, matched literally on every engine.
+     *
+     * @param  Builder<SearchDocument>  $builder
+     */
+    private static function applyWhere(Builder $builder, Engine $engine, mixed $where): void
+    {
+        foreach (is_array($where) ? $where : [] as $attribute => $value) {
+            if (is_string($attribute) && preg_match('/^[A-Za-z_][A-Za-z0-9_]{0,63}$/D', $attribute) && is_scalar($value)) {
+                $builder->where($attribute, $engine instanceof TypesenseEngine ? TypesenseSchema::filterValue($value) : $value);
+            }
+        }
+    }
+
+    /**
+     * Live elements for engine hits, in the given order; ids that no longer
+     * resolve to a live element are dropped.
+     *
      * @param  list<int>  $ids
      * @return list<ElementInterface>
      */
-    private function hydrate(IndexDefinition $index, string $site, array $ids): array
+    public function hydrate(IndexDefinition $index, string $site, array $ids): array
     {
         if ($ids === []) {
             return [];
