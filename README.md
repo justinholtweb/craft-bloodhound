@@ -21,6 +21,21 @@ Laravel Scout for Craft elements — index entries, assets, users or products in
 Only **live** elements are indexed, and hits are re-read through a live-only element query, so stale
 documents can never surface disabled, expired or deleted content.
 
+## Index health
+
+**Utilities → Bloodhound** shows, per index and site, live elements vs documents and how the engine has
+drifted: **missing** (live elements with no document), **orphaned** (documents whose element isn't live) and
+**stale** (documents older than their element). **Repair** re-syncs just those; **Rebuild** re-indexes
+everything on the queue.
+
+```bash
+php artisan craft:bloodhound:status [--fail-on-drift]   # non-zero exit on drift, for monitoring/CI
+php artisan craft:bloodhound:repair [index] [--site=] [--dry-run]
+```
+
+Health needs the engine to list its documents: built in for Meilisearch; for other engines implement
+`JustinHoltWeb\Bloodhound\Engines\ListsDocuments` on the engine.
+
 ## Searching: Twig and Blade
 
 ```twig

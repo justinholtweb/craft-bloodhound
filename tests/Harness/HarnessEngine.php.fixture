@@ -12,8 +12,17 @@ use Laravel\Scout\Engines\Engine;
  * matching, title hits ranked first. Lets plugin tests exercise Scout's real Engine API without a
  * search server. Not part of any plugin.
  */
-class HarnessEngine extends Engine
+class HarnessEngine extends Engine implements \JustinHoltWeb\Bloodhound\Engines\ListsDocuments
 {
+    public function bloodhoundDocuments(string $index): ?array
+    {
+        if (! File::exists($this->path($index))) {
+            return null;
+        }
+
+        return collect($this->load($index))->mapWithKeys(fn ($d, $id) => [(int) $id => $d['dateUpdated'] ?? null])->all();
+    }
+
     private function path(string $index): string
     {
         return storage_path('harness-search/'.preg_replace('/[^A-Za-z0-9_-]/', '_', $index).'.json');

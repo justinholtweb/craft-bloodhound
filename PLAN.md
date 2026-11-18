@@ -30,6 +30,14 @@ engine works unchanged.
   without `updateIndexSettings()` skip it.
 - Relations index as the related elements' UI labels, so Wingman/Eloquent elements (no titles) read as
   their names.
+- **2026-11-18 — phase 2a (index health) done.** Utilities → Bloodhound + `status [--fail-on-drift]` /
+  `repair [--dry-run]`: missing / orphaned / stale per index+site, comparing live element ids and
+  `dateUpdated` with what the engine holds (Meilisearch lister built in; `ListsDocuments` contract for any
+  other engine). Repair re-syncs only drifted ids; Rebuild is a queued unique job (`uniqueFor` so a cleared
+  job can't block rebuilds forever). 9 Pest + 46 harness checks, green on Meilisearch and the file engine.
+- Gotcha: a stale PHPStan result cache in the container's /tmp (after repos moved) made Larastan's
+  bootstrap fail only in parallel mode — `phpstan clear-result-cache`.
+- Next (phase 2b): Typesense — needs the `kevinquillen/ddev-typesense` add-on in the harness (Justin runs it).
 - Open: Typesense (needs a per-class
   collection schema in Scout config); Pro: take over Craft's own search, synonyms, zero-downtime reindex.
 

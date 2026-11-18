@@ -28,6 +28,7 @@
     "require-dev": {
         "larastan/larastan": "^3.13",
         "laravel/pint": "^1.22",
+        "meilisearch/meilisearch-php": "^1.10",
         "orchestra/testbench": "^11.0",
         "pestphp/pest": "^5.0",
         "pestphp/pest-plugin-laravel": "^5.0",

@@ -77,7 +77,40 @@ ok "engine down: saving an entry still works" "$(entry second-article-2 '$e->set
 settle
 cp /tmp/bh-env.bak .env; sleep 1
 
+# ---- Phase 2: index health + repair (engine-neutral: injects drift through Bloodhound's own engine) ----
+ddev artisan craft:bloodhound:import articles --fresh >/dev/null 2>&1; settle
+inject() { tk "\$e=app(Laravel\\Scout\\EngineManager::class)->engine(); \$n=app(JustinHoltWeb\\Bloodhound\\Sync\\Indexer::class)->engineIndex(app(JustinHoltWeb\\Bloodhound\\Indexes\\Indexes::class)->get('articles'),'default'); \$c=fn(\$a)=>new Illuminate\\Database\\Eloquent\\Collection([JustinHoltWeb\\Bloodhound\\Documents\\SearchDocument::for(\$n,\$a)]); \$e->update(\$c(['id'=>99999,'title'=>'ghost','dateUpdated'=>1])); \$e->delete(\$c(['id'=>10])); \$e->update(\$c(['id'=>8,'title'=>'Hello Momentum','dateUpdated'=>1])); echo 1;" >/dev/null; settle; }
+counts() { ddev artisan craft:bloodhound:status 2>/dev/null | grep "_articles_default" | awk -F'|' '{gsub(/ /,""); print $5"/"$6"/"$7}'; }
+ok "fresh import: no drift" "$(counts)" "0/0/0"
+inject
+ok "status reports missing/orphaned/stale" "$(counts)" "1/1/1"
+ddev artisan craft:bloodhound:status --fail-on-drift >/dev/null 2>&1; ok "--fail-on-drift exits non-zero on drift" "$?" "1"
+ok "repair --dry-run counts the drift" "$(ddev artisan craft:bloodhound:repair articles --site=default --dry-run 2>/dev/null | grep -oE '[0-9]+ would')" "3 would"
+ok "dry run changes nothing" "$(counts)" "1/1/1"
+ddev artisan craft:bloodhound:repair articles --site=default >/dev/null 2>&1; settle
+ok "repair fixes exactly the drift" "$(counts)" "0/0/0"
+ddev artisan craft:bloodhound:status --fail-on-drift >/dev/null 2>&1; ok "--fail-on-drift exits zero when clean" "$?" "0"
+ok "repaired orphan no longer searchable" "$(total twig ghost)" "0"
+
 J=$("$H/bin/cp-session")
+XSRF=$(grep XSRF-TOKEN "$J" | awk '{print $7}' | python3 -I -c 'import sys,urllib.parse;print(urllib.parse.unquote(sys.stdin.read().strip()))')
+post() { curl -sk -b "$J" -c "$J" -X POST -H "X-XSRF-TOKEN: $XSRF" -o /dev/null -w '%{http_code}' "$@"; }
+ok "utility page loads" "$(curl -sk -b "$J" -o /dev/null -w '%{http_code}' "$U/admin/utilities/bloodhound")" "200"
+inject
+ok "CP Repair action" "$(post -d index=articles -d site=default "$U/admin/bloodhound/repair")" "302"
+settle
+ok "CP Repair fixed the drift" "$(counts)" "0/0/0"
+ok "CP action: unknown index 404s" "$(post -d index=nope -d site=default "$U/admin/bloodhound/repair")" "404"
+ok "CP action: unknown site 404s" "$(post -d index=articles -d site=nope "$U/admin/bloodhound/repair")" "404"
+ok "CP action: logged-out request refused" "$(curl -sk -X POST -o /dev/null -w '%{http_code}' -d index=articles -d site=default "$U/admin/bloodhound/repair")" "419"
+# Run (never delete) queued rebuilds: deleting a unique job's row leaves its lock held.
+ddev artisan queue:work --queue=default --stop-when-empty >/dev/null 2>&1
+post -d index=articles -d site=default "$U/admin/bloodhound/rebuild" >/dev/null; post -d index=articles -d site=default "$U/admin/bloodhound/rebuild" >/dev/null
+ok "CP Rebuild queues one (unique) job" "$(tk 'echo Illuminate\Support\Facades\DB::table("jobs")->where("payload","like","%RebuildIndex%")->count();')" "1"
+ddev artisan queue:work --queue=default --stop-when-empty >/dev/null 2>&1; settle
+ok "queued rebuild ran and released its lock (index clean, can rebuild again)" "$(counts)/$(post -d index=articles -d site=default "$U/admin/bloodhound/rebuild" >/dev/null; tk 'echo Illuminate\Support\Facades\DB::table("jobs")->where("payload","like","%RebuildIndex%")->count();')" "0/0/0/1"
+ddev artisan queue:work --queue=default --stop-when-empty >/dev/null 2>&1; settle
+
 ok "settings page loads" "$(curl -sk -b "$J" -o /dev/null -w '%{http_code}' "$U/admin/settings/plugins/bloodhound")" "200"
 
 entry second-article-2 '$e->setFieldValue("summary", "The related one.");' >/dev/null

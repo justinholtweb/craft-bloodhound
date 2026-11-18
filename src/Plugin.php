@@ -41,6 +41,12 @@ class Plugin extends BasePlugin
         Commands\ImportCommand::class,
         Commands\FlushCommand::class,
         Commands\SyncScheduledCommand::class,
+        Commands\StatusCommand::class,
+        Commands\RepairCommand::class,
+    ];
+
+    protected array $utilities = [
+        Utilities\BloodhoundUtility::class,
     ];
 
     #[Override]

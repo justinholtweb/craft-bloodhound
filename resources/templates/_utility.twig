@@ -1,0 +1,55 @@
+{# Utilities → Bloodhound #}
+<div class="grid gap-6">
+  <p class="text-sm opacity-70">{{ 'Engine:'|t('bloodhound') }} <code>{{ driver ?: 'null' }}</code></p>
+  {% if error %}
+    <p class="error" id="bloodhound-error">{{ error }}</p>
+  {% elseif rows is empty %}
+    <p>{{ 'No indexes yet. Add one in Settings → Plugins → Bloodhound.'|t('bloodhound') }}</p>
+  {% else %}
+    <table class="cp-table cp-table--aligned" id="bloodhound-health">
+      <thead>
+        <tr>
+          <th class="cell">{{ 'Index'|t('bloodhound') }}</th>
+          <th class="cell">{{ 'Live elements'|t('bloodhound') }}</th>
+          <th class="cell">{{ 'Documents'|t('bloodhound') }}</th>
+          <th class="cell">{{ 'Missing'|t('bloodhound') }}</th>
+          <th class="cell">{{ 'Orphaned'|t('bloodhound') }}</th>
+          <th class="cell">{{ 'Stale'|t('bloodhound') }}</th>
+          <th class="cell"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+          {% set drift = r.missing|length + r.orphaned|length + r.stale|length %}
+          <tr data-index="{{ r.index }}" data-site="{{ r.site }}" data-drift="{{ drift }}">
+            <th class="cell">{{ r.index }} <span class="opacity-70">({{ r.site }})</span><div class="text-sm opacity-70"><code>{{ r.engineIndex }}</code></div></th>
+            <td class="cell">{{ r.live|number }}</td>
+            {% if not r.supported %}
+              <td class="cell" colspan="4">{{ 'This engine can’t list its documents, so drift isn’t shown.'|t('bloodhound') }}</td>
+            {% else %}
+              <td class="cell">{{ r.exists ? r.documents|number : 'not created'|t('bloodhound') }}</td>
+              <td class="cell" data-missing="{{ r.missing|length }}">{{ r.missing|length }}</td>
+              <td class="cell" data-orphaned="{{ r.orphaned|length }}">{{ r.orphaned|length }}</td>
+              <td class="cell" data-stale="{{ r.stale|length }}">{{ r.stale|length }}</td>
+            {% endif %}
+            <td class="cell">
+              <div class="flex gap-2">
+                {% if r.supported and drift > 0 %}
+                  <form method="post" action="{{ repairUrl }}">{{ csrf_field() }}
+                    <input type="hidden" name="index" value="{{ r.index }}"><input type="hidden" name="site" value="{{ r.site }}">
+                    <button type="submit" class="btn small">{{ 'Repair'|t('bloodhound') }}</button>
+                  </form>
+                {% endif %}
+                <form method="post" action="{{ rebuildUrl }}">{{ csrf_field() }}
+                  <input type="hidden" name="index" value="{{ r.index }}"><input type="hidden" name="site" value="{{ r.site }}">
+                  <button type="submit" class="btn small">{{ 'Rebuild'|t('bloodhound') }}</button>
+                </form>
+              </div>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <p class="text-sm opacity-70">{{ 'Repair re-syncs only the drifted elements. Rebuild re-indexes everything on the queue.'|t('bloodhound') }}</p>
+  {% endif %}
+</div>
