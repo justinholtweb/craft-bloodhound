@@ -6,6 +6,7 @@ namespace JustinHoltWeb\Bloodhound\Engines;
 
 use Laravel\Scout\Engines\Engine;
 use Laravel\Scout\Engines\MeilisearchEngine;
+use Laravel\Scout\Engines\TypesenseEngine;
 use Meilisearch\Contracts\DocumentsQuery;
 use Meilisearch\Exceptions\ApiException;
 
@@ -17,7 +18,7 @@ class DocumentLister
 {
     public function supports(Engine $engine): bool
     {
-        return $engine instanceof ListsDocuments || $engine instanceof MeilisearchEngine;
+        return $engine instanceof ListsDocuments || $engine instanceof MeilisearchEngine || $engine instanceof TypesenseEngine;
     }
 
     /**
@@ -28,6 +29,7 @@ class DocumentLister
         return match (true) {
             $engine instanceof ListsDocuments => $engine->bloodhoundDocuments($index),
             $engine instanceof MeilisearchEngine => $this->meilisearch($engine, $index),
+            $engine instanceof TypesenseEngine => TypesenseSchema::documents($engine, $index),
             default => throw new \RuntimeException(get_class($engine).' can’t list its documents; implement '.ListsDocuments::class.'.'),
         };
     }

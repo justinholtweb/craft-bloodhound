@@ -9,11 +9,14 @@ use CraftCms\Cms\Support\Facades\Sites;
 use Illuminate\Database\Eloquent\Collection;
 use JustinHoltWeb\Bloodhound\Documents\DocumentBuilder;
 use JustinHoltWeb\Bloodhound\Documents\SearchDocument;
+use JustinHoltWeb\Bloodhound\Engines\TypesenseSchema;
 use JustinHoltWeb\Bloodhound\Indexes\IndexDefinition;
 use JustinHoltWeb\Bloodhound\Indexes\Indexes;
 use JustinHoltWeb\Bloodhound\Settings;
 use Laravel\Scout\EngineManager;
 use Laravel\Scout\Engines\Engine;
+use Laravel\Scout\Engines\TypesenseEngine;
+use Typesense\Exceptions\ObjectNotFound;
 
 /**
  * Writes documents to the engine. Every write re-reads the element through the
@@ -49,7 +52,7 @@ class Indexer
 
         $gone = array_values(array_diff(array_map(intval(...), $elementIds), $liveIds));
         if ($gone !== []) {
-            $this->engine()->delete(new Collection(array_map(fn (int $id) => SearchDocument::for($name, ['id' => $id]), $gone)));
+            $this->engine()->delete(new Collection(array_map(fn (int $id) => SearchDocument::for($name, ['id' => $id], $index), $gone)));
         }
     }
 
@@ -85,6 +88,12 @@ class Indexer
     {
         $engine = $this->engine();
 
+        if ($engine instanceof TypesenseEngine) {
+            TypesenseSchema::ensure($engine, $name, $index);
+
+            return;
+        }
+
         if (! method_exists($engine, 'updateIndexSettings')) {
             return;
         }
@@ -93,6 +102,7 @@ class Indexer
 
         $filterable = $index->elementType === 'assets' ? ['siteId', 'volume', 'kind'] : ['siteId', 'section', 'type'];
         $engine->updateIndexSettings($name, [
+            'searchableAttributes' => $index->searchableAttributes(),
             'filterableAttributes' => $filterable,
             'sortableAttributes' => ['dateUpdated', ...($index->elementType === 'entries' ? ['postDate'] : [])],
         ]);
@@ -100,7 +110,11 @@ class Indexer
 
     public function flush(IndexDefinition $index, string $siteHandle): void
     {
-        $this->engine()->deleteIndex($this->engineIndex($index, $siteHandle));
+        try {
+            $this->engine()->deleteIndex($this->engineIndex($index, $siteHandle));
+        } catch (ObjectNotFound) {
+            // Typesense: nothing to flush.
+        }
     }
 
     public function engineIndex(IndexDefinition $index, string $siteHandle): string
@@ -129,7 +143,7 @@ class Indexer
         }
 
         $this->engine()->update(new Collection(array_map(
-            fn (ElementInterface $e) => SearchDocument::for($name, $this->builder->build($e, $index)),
+            fn (ElementInterface $e) => SearchDocument::for($name, $this->builder->build($e, $index), $index),
             array_values($elements),
         )));
     }

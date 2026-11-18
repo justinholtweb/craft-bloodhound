@@ -9,10 +9,12 @@ use CraftCms\Cms\Support\Facades\Sites;
 use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
 use JustinHoltWeb\Bloodhound\Documents\SearchDocument;
+use JustinHoltWeb\Bloodhound\Engines\TypesenseSchema;
 use JustinHoltWeb\Bloodhound\Indexes\IndexDefinition;
 use JustinHoltWeb\Bloodhound\Indexes\Indexes;
 use JustinHoltWeb\Bloodhound\Sync\Indexer;
 use Laravel\Scout\Builder;
+use Laravel\Scout\Engines\TypesenseEngine;
 use Throwable;
 
 use function CraftCms\Cms\t;
@@ -45,15 +47,16 @@ class Bloodhound
         }
 
         try {
-            $builder = new Builder(SearchDocument::for($this->indexer->engineIndex($definition, $site)), $query);
+            $builder = new Builder(SearchDocument::for($this->indexer->engineIndex($definition, $site), [], $definition), $query);
+
+            $engine = $builder->model->searchableUsing();
 
             foreach (is_array($options['where'] ?? null) ? $options['where'] : [] as $attribute => $value) {
                 if (is_string($attribute) && preg_match('/^[A-Za-z_][A-Za-z0-9_]{0,63}$/D', $attribute) && is_scalar($value)) {
-                    $builder->where($attribute, $value);
+                    $builder->where($attribute, $engine instanceof TypesenseEngine ? TypesenseSchema::filterValue($value) : $value);
                 }
             }
 
-            $engine = $builder->model->searchableUsing();
             $raw = $engine->paginate($builder, $perPage, $page);
             $ids = array_map(intval(...), $engine->mapIds($raw)->all());
             $total = (int) $engine->getTotalCount($raw);

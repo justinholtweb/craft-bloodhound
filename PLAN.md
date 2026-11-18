@@ -37,9 +37,20 @@ engine works unchanged.
   job can't block rebuilds forever). 9 Pest + 46 harness checks, green on Meilisearch and the file engine.
 - Gotcha: a stale PHPStan result cache in the container's /tmp (after repos moved) made Larastan's
   bootstrap fail only in parallel mode — `phpstan clear-result-cache`.
-- Next (phase 2b): Typesense — needs the `kevinquillen/ddev-typesense` add-on in the harness (Justin runs it).
-- Open: Typesense (needs a per-class
-  collection schema in Scout config); Pro: take over Craft's own search, synonyms, zero-downtime reindex.
+- **2026-11-18 — phase 2b (Typesense) done.** Scout reads Typesense's collection schema and `query_by` per
+  model class, but every index shares `SearchDocument`, so `TypesenseSchema` derives both from the index
+  definition (`typesenseCollectionSchema()` / `typesenseSearchParameters()` on the document). `prepare()`
+  creates the collection or adds fields the index has gained. Documents get string ids and custom fields
+  flattened to `string[]`; health lists documents via `export`; string filter values are backtick-quoted.
+  Every engine now searches the same fields (`IndexDefinition::searchableAttributes()` → Meilisearch
+  `searchableAttributes` too), so results no longer depend on the engine. 13 Pest; harness green on
+  Meilisearch (51), Typesense (53) and the file engine (49), back to back.
+- Gotchas: Typesense `string*` stays unresolved until a document has a value, and `query_by` can't name an
+  unresolved field — one always-empty custom field broke every search. Declare `string[]`. Typesense also
+  rejects integer ids and a document missing a non-optional field. Harness entry 2 had an empty title
+  (fails validation on save); the Bloodhound checks now title it.
+- Open: Algolia (needs a paid account to verify); Pro: take over Craft's own search, synonyms,
+  zero-downtime reindex.
 
 ## Phases
 1. **Indexes (Lite).** CP-defined indexes: element type, sources (sections/volumes/groups), condition builder,

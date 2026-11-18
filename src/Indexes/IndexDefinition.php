@@ -38,6 +38,24 @@ final readonly class IndexDefinition
         return new self($handle, $type, self::list($row['sources'] ?? ''), self::list($row['fields'] ?? ''));
     }
 
+    /** Attributes a document carries for filtering and sorting, never searched as text. */
+    public const array ATTRIBUTES = ['id', 'url', 'siteId', 'dateUpdated', 'postDate', 'section', 'type', 'volume', 'kind'];
+
+    /**
+     * What a query is matched against, in ranking order: the title, then the
+     * index's own fields. Every engine is told the same list, so results don't
+     * depend on which engine is configured (left to itself, Meilisearch would
+     * also search URLs and type handles).
+     *
+     * @return list<string>
+     */
+    public function searchableAttributes(): array
+    {
+        $fields = ['title', ...($this->elementType === 'assets' ? ['filename', 'alt'] : []), ...$this->fields];
+
+        return array_values(array_unique(array_diff($fields, self::ATTRIBUTES)));
+    }
+
     public function engineIndexName(string $prefix, string $siteHandle): string
     {
         return $prefix.$this->handle.'_'.$siteHandle;

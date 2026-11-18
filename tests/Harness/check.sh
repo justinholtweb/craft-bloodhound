@@ -1,7 +1,8 @@
 #!/bin/bash
-# Live checks against the Craft 6 harness. Engine: SCOUT_DRIVER=meilisearch (kevinquillen/ddev-meilisearch add-on,
-# MEILISEARCH_HOST=http://meilisearch:7700, MEILISEARCH_KEY=ddev) or SCOUT_DRIVER=harness (tests/Harness/HarnessEngine.php.fixture,
-# registered in the harness's AppServiceProvider) or meilisearch. Templates: tests/Harness/templates/* →
+# Live checks against the Craft 6 harness. Engine: whatever the harness .env sets —
+#   SCOUT_DRIVER=meilisearch (kevinquillen/ddev-meilisearch add-on; MEILISEARCH_HOST=http://meilisearch:7700, MEILISEARCH_KEY=ddev)
+#   SCOUT_DRIVER=typesense   (kevinquillen/ddev-typesense add-on; TYPESENSE_HOST=typesense, TYPESENSE_API_KEY=ddev)
+#   SCOUT_DRIVER=harness     (tests/Harness/HarnessEngine.php.fixture, registered in the harness's AppServiceProvider) Templates: tests/Harness/templates/* →
 # resources/views/bh/. Uses the `articles` section from Momentum's harness fixtures.
 set -uo pipefail
 exec < /dev/null
@@ -9,6 +10,7 @@ H=/Users/jholt/Sites/plugin-testing-craft6
 U=https://plugin-testing-craft6.ddev.site
 cd "$H" || exit 2
 pass=0 fail=0
+DRIVER=$(grep '^SCOUT_DRIVER=' .env | cut -d= -f2)
 ok() { if [ "$2" = "$3" ]; then echo "✓ $1"; pass=$((pass+1)); else echo "✗ $1 (got '$2', want '$3')"; fail=$((fail+1)); fi; }
 tk() { ddev artisan tinker --execute "$1" 2>/dev/null | grep -v WARNING | tail -1; }
 ids() { curl -sk "$U/bh/$1?q=$2&page=${3:-1}" | grep -oE 'data-id="[0-9]+"' | grep -oE '[0-9]+' | tr '\n' ',' | sed 's/,$//'; }
@@ -18,18 +20,26 @@ settle() { ddev exec "for i in 1 2 3 4 5 6 7 8 9 10; do curl -s -H 'Authorizatio
 entry() { tk "\$e=CraftCms\\Cms\\Entry\\Elements\\Entry::find()->slug('$1')->status(null)->one(); $2 echo CraftCms\\Cms\\Support\\Facades\\Elements::saveElement(\$e) ? 'saved' : json_encode(\$e->errors()->all());"; }
 
 settings "['queueUpdates' => false, 'indexPrefix' => 'harness_', 'indexes' => [['handle' => 'articles', 'elementType' => 'entries', 'sources' => 'articles', 'fields' => 'summary, customers']]]"
-entry second-article-2 '$e->enabled = true; $e->setFieldValue("summary", "The related one.");' >/dev/null
+entry second-article-2 '$e->enabled = true; $e->setFieldValue("summary", "The related one, from Craft.");' >/dev/null
+entry hello-momentum '$e->title = "Momentum Notes"; $e->setFieldValue("summary", "A page about Craft.");' >/dev/null
 ddev artisan craft:bloodhound:import articles --fresh >/dev/null 2>&1; settle
 
 for e in twig blade; do
-  ok "$e: finds by title" "$(ids $e momentum)" "8,2"
+  ok "$e: finds by title" "$(ids $e momentum | tr ',' '\n' | sort -n | tr '\n' ' ')" "2 8 "
   ok "$e: finds by a related element's name" "$(ids $e johnson)" "8"
-  p1=$(ids $e article 1); p2=$(ids $e article 2)
+  # Bloodhound configures Meilisearch/Typesense's searched fields; a custom engine searches what it likes.
+  [ "$DRIVER" != harness ] && ok "$e: URLs and type handles aren't searched" "$(total $e article)" "1"
+  p1=$(ids $e craft 1); p2=$(ids $e craft 2)
   ok "$e: pagination (2 + 1 hits, no overlap, all 3 articles)" "$(echo "$p1" | tr ',' '\n' | wc -l | tr -d ' ')/$(echo "$p2" | tr ',' '\n' | wc -l | tr -d ' ')/$(echo "$p1,$p2" | tr ',' '\n' | sort -n | uniq | tr '\n' ' ')" "2/1/2 8 10 "
   ok "$e: no query → no results" "$(total $e '')" "0"
 done
 ok "filter on a filterable attribute (section=articles)" "$(curl -sk "$U/bh/twig?q=momentum&section=articles" | grep -oE '<p id="total">[0-9]+' | grep -oE '[0-9]+$')" "2"
 ok "filter that matches nothing (section=nope)" "$(curl -sk "$U/bh/blade?q=momentum&section=nope" | grep -oE '<p id="total">[0-9]+' | grep -oE '[0-9]+$')" "0"
+# Filter values are literals: quote/operator tricks in template input can't widen a filter on any engine.
+err() { curl -sk "$U/bh/blade?q=momentum&section=$1" | grep -o '<p id="error">[^<]*' | sed 's/<p id="error">//'; }
+for v in 'nope%22%20OR%20section%3D%22articles' 'nope%20%7C%7C%20section%3A%3Darticles' '%5Bnope%2Carticles%5D'; do
+  ok "filter injection ($v) matches nothing, no error" "$(total twig "momentum&section=$v")/$(err "$v")" "0/"
+done
 ok "Twig and Blade return the same hits" "$(ids twig article)" "$(ids blade article)"
 
 ok "edit an entry (sync mode)" "$(entry second-article-2 '$e->setFieldValue("summary", "Now about zeppelins.");')" "saved"
@@ -79,7 +89,7 @@ cp /tmp/bh-env.bak .env; sleep 1
 
 # ---- Phase 2: index health + repair (engine-neutral: injects drift through Bloodhound's own engine) ----
 ddev artisan craft:bloodhound:import articles --fresh >/dev/null 2>&1; settle
-inject() { tk "\$e=app(Laravel\\Scout\\EngineManager::class)->engine(); \$n=app(JustinHoltWeb\\Bloodhound\\Sync\\Indexer::class)->engineIndex(app(JustinHoltWeb\\Bloodhound\\Indexes\\Indexes::class)->get('articles'),'default'); \$c=fn(\$a)=>new Illuminate\\Database\\Eloquent\\Collection([JustinHoltWeb\\Bloodhound\\Documents\\SearchDocument::for(\$n,\$a)]); \$e->update(\$c(['id'=>99999,'title'=>'ghost','dateUpdated'=>1])); \$e->delete(\$c(['id'=>10])); \$e->update(\$c(['id'=>8,'title'=>'Hello Momentum','dateUpdated'=>1])); echo 1;" >/dev/null; settle; }
+inject() { tk "\$e=app(Laravel\\Scout\\EngineManager::class)->engine(); \$n=app(JustinHoltWeb\\Bloodhound\\Sync\\Indexer::class)->engineIndex(app(JustinHoltWeb\\Bloodhound\\Indexes\\Indexes::class)->get('articles'),'default'); \$c=fn(\$a)=>new Illuminate\\Database\\Eloquent\\Collection([JustinHoltWeb\\Bloodhound\\Documents\\SearchDocument::for(\$n,\$a,app(JustinHoltWeb\\Bloodhound\\Indexes\\Indexes::class)->get('articles'))]); \$e->update(\$c(['id'=>99999,'title'=>'ghost','dateUpdated'=>1])); \$e->delete(\$c(['id'=>10])); \$e->update(\$c(['id'=>8,'title'=>'Hello Momentum','dateUpdated'=>1])); echo 1;" >/dev/null; settle; }
 counts() { ddev artisan craft:bloodhound:status 2>/dev/null | grep "_articles_default" | awk -F'|' '{gsub(/ /,""); print $5"/"$6"/"$7}'; }
 ok "fresh import: no drift" "$(counts)" "0/0/0"
 inject
@@ -110,6 +120,15 @@ ok "CP Rebuild queues one (unique) job" "$(tk 'echo Illuminate\Support\Facades\D
 ddev artisan queue:work --queue=default --stop-when-empty >/dev/null 2>&1; settle
 ok "queued rebuild ran and released its lock (index clean, can rebuild again)" "$(counts)/$(post -d index=articles -d site=default "$U/admin/bloodhound/rebuild" >/dev/null; tk 'echo Illuminate\Support\Facades\DB::table("jobs")->where("payload","like","%RebuildIndex%")->count();')" "0/0/0/1"
 ddev artisan queue:work --queue=default --stop-when-empty >/dev/null 2>&1; settle
+
+# Typesense only: an existing collection gains fields added to the index without a rebuild.
+if [ "$DRIVER" = typesense ]; then
+  settings "['indexes' => [['handle' => 'articles', 'elementType' => 'entries', 'sources' => 'articles', 'fields' => 'summary, customers, tagline']]]"
+  ddev artisan craft:bloodhound:import articles >/dev/null 2>&1
+  ok "typesense: new index field added to the live collection" "$(ddev exec "curl -s -H 'X-TYPESENSE-API-KEY: ddev' http://typesense:8108/collections/harness_articles_default" 2>/dev/null | grep -o '"name":"tagline"' | head -1)" '"name":"tagline"'
+  ok "typesense: searching still works with the new field in query_by" "$(total twig momentum)" "2"
+  settings "['indexes' => [['handle' => 'articles', 'elementType' => 'entries', 'sources' => 'articles', 'fields' => 'summary, customers']]]"
+fi
 
 ok "settings page loads" "$(curl -sk -b "$J" -o /dev/null -w '%{http_code}' "$U/admin/settings/plugins/bloodhound")" "200"
 
