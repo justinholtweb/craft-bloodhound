@@ -64,6 +64,36 @@ Product indexes need **Craft Commerce** installed and enabled. Without it, a pro
 price, and saving a single variant re-syncs its product. Scheduled and expiring products are caught
 by `craft:bloodhound:sync-scheduled`, like entries.
 
+## Multisite
+
+Every index is kept **once per site**, so each site searches its own content in its own language:
+`articles` on a site with the handle `fr` is the engine index `{prefix}articles_fr`, holding that
+site's titles and field values.
+
+- `bloodhound.search()` searches the current site; pass `site: 'fr'` for another one.
+- An entry disabled for one site leaves only that site's index.
+- `import`, `flush` and `repair` cover every site unless you pass `--site`.
+- An unknown site handle finds nothing, and never creates an engine index. Commands stop with an
+  error that lists the site handles.
+- Pro's `.search()` takeover answers queries for one site. Queries across several sites stay with
+  Craft's search.
+- Over GraphQL, `bloodhoundSearch` takes a `site` argument, limited to the sites the schema can read.
+
+The engines handle accents for you: `montgolfieres` finds “montgolfière”. Bloodhound doesn't yet
+tell the engine each site's language, which matters most for languages written without spaces
+(Chinese, Japanese, Thai).
+
+## Sidebar
+
+Bloodhound adds a sidebar link to its index health page (**Utilities → Bloodhound**). Only people
+who can use that utility see it.
+
+| Setting | What it does |
+| --- | --- |
+| **Show in the sidebar** | On by default. Switch it off to keep Bloodhound under Utilities only. |
+| **Sidebar label** | What the link says. Blank means “Bloodhound”. Page titles and the plugin list keep the plugin's name, so docs and support still line up. |
+| **Sidebar icon** | One of Craft's icons, or an icon from a custom icon set, picked with Craft's icon picker. Blank means Bloodhound's own icon. File paths and raw SVG aren't accepted, and an icon that no longer exists falls back to Bloodhound's own. |
+
 ## Index prefix
 
 Prepended to every engine index name, so environments don't share indexes. Accepts an environment

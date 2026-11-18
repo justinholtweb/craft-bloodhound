@@ -193,6 +193,31 @@ final class TypesenseSchema
                 // already gone
             }
         }
+
+        // Builds from interrupted swaps would otherwise be left behind for good.
+        self::dropBuilds($engine, $alias, keep: $collection);
+    }
+
+    /**
+     * Deletes Bloodhound's swap builds of an index (`{name}_YYYYmmddHHMMSS`)
+     * other than `$keep`. Only that exact naming is touched.
+     */
+    public static function dropBuilds(TypesenseEngine $engine, string $name, ?string $keep = null): void
+    {
+        // @phpstan-ignore method.notFound
+        $collections = $engine->getCollections();
+
+        foreach ($collections->retrieve() as $collection) {
+            $candidate = (string) ($collection['name'] ?? '');
+
+            if ($candidate !== $keep && preg_match('/^'.preg_quote($name, '/').'_\d{14}$/D', $candidate)) {
+                try {
+                    $collections[$candidate]->delete();
+                } catch (ObjectNotFound) {
+                    // already gone
+                }
+            }
+        }
     }
 
     /** Deletes an index whether it is a collection or (after a swap rebuild) an alias and its collection. */
@@ -215,6 +240,8 @@ final class TypesenseSchema
         } catch (ObjectNotFound) {
             // nothing to drop
         }
+
+        self::dropBuilds($engine, $name);
     }
 
     /**

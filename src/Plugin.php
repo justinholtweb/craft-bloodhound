@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace JustinHoltWeb\Bloodhound;
 
+use CraftCms\Cms\Cp\Data\NavItem;
 use CraftCms\Cms\Gql\Events\GqlSchemaComponentsResolving;
 use CraftCms\Cms\Gql\GqlQueries;
 use CraftCms\Cms\Plugin\Events\PluginSettingsSaved;
@@ -11,6 +12,7 @@ use CraftCms\Cms\Plugin\Plugin as BasePlugin;
 use CraftCms\Cms\Search\Search as CraftSearchService;
 use CraftCms\Cms\Support\Facades\Plugins;
 use CraftCms\Cms\Support\Facades\Search as SearchFacade;
+use CraftCms\Cms\Ui\Controls\IconPicker;
 use CraftCms\Cms\Ui\Controls\Lightswitch;
 use CraftCms\Cms\Ui\Controls\Table;
 use CraftCms\Cms\Ui\Controls\Text;
@@ -21,6 +23,7 @@ use CraftCms\Cms\Ui\UiContext;
 use CraftCms\Cms\View\Events\TemplateGlobalsResolving;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Gate;
 use JustinHoltWeb\Bloodhound\Search\Bloodhound;
 use JustinHoltWeb\Bloodhound\Search\CraftSearch;
 use Override;
@@ -73,6 +76,8 @@ class Plugin extends BasePlugin
     public function boot(): void
     {
         $this->app->bind(Settings::class, fn (): Settings => $this->getSettings());
+        // A sidebar link to the index health page, unless switched off in settings.
+        $this->hasCpSection = $this->getSettings()->showInCpNav;
         $this->app->scoped(Bloodhound::class);
         // One listener per request/job, so a product save and its variants' saves sync once.
         $this->app->scoped(Listeners\SyncOnElementChange::class);
@@ -85,6 +90,25 @@ class Plugin extends BasePlugin
             $this->app->extend(CraftSearchService::class, fn (CraftSearchService $craft) => $craft instanceof CraftSearch ? $craft : CraftSearch::replacing($craft));
             SearchFacade::clearResolvedInstance(CraftSearchService::class);
         }
+    }
+
+    /**
+     * The sidebar link: Utilities → Bloodhound (index health), with the label and
+     * icon from settings. Hidden from people who can't open that utility.
+     */
+    #[Override]
+    public function getCpNavItem(): NavItem|array|null
+    {
+        if (! Gate::check('utility:'.Utilities\BloodhoundUtility::id())) {
+            return null;
+        }
+
+        $settings = $this->getSettings();
+
+        return new NavItem()
+            ->label($settings->navLabel() ?? $this->name)
+            ->href('utilities/'.Utilities\BloodhoundUtility::id())
+            ->icon($settings->navIcon() ?? $this->cpNavIconPath());
     }
 
     #[Override]
@@ -118,6 +142,12 @@ class Plugin extends BasePlugin
                 ->allowAdd()->allowDelete()->allowReorder()
                 ->addRowLabel(t('Add an index', category: 'bloodhound')))
                 ->instructions(t('Each index is kept per site in your Scout engine (SCOUT_DRIVER). Only live elements (active users) are indexed. Products need Craft Commerce. A user index holds each user’s name and username, so list only fields you’d show publicly. Run `craft:bloodhound:import` after changing an index.', category: 'bloodhound')),
+            Field::make(t('Show in the sidebar', category: 'bloodhound'), Lightswitch::make('showInCpNav'))
+                ->instructions(t('Adds a sidebar link to the index health page (Utilities → Bloodhound). Only people who can use that utility see it.', category: 'bloodhound')),
+            Field::make(t('Sidebar label', category: 'bloodhound'), Text::make('cpNavLabel')->placeholder('Bloodhound'))
+                ->instructions(t('What the sidebar link says. Leave blank for “Bloodhound”. Page titles keep the plugin’s name.', category: 'bloodhound')),
+            Field::make(t('Sidebar icon', category: 'bloodhound'), IconPicker::make('cpNavIcon')->sets('*'))
+                ->instructions(t('One of Craft’s icons, or one from a custom icon set. Leave blank for Bloodhound’s own icon.', category: 'bloodhound')),
             Field::make(t('Index prefix', category: 'bloodhound'), Text::make('indexPrefix')->placeholder('$CRAFT_ENVIRONMENT'))
                 ->instructions(t('Prepended to engine index names so environments don’t share indexes.', category: 'bloodhound')),
             Field::make(t('Queue index updates', category: 'bloodhound'), Lightswitch::make('queueUpdates'))

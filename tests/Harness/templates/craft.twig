@@ -1,3 +1,5 @@
 {# Bloodhound harness (Pro): Craft's own .search(), answered by the engine when covered #}
-{% set q = app('request').query('q') %}
-<p id="ids">{{ craft.entries.section('articles').status(app('request').query('all') ? null : 'live').search(q).orderBy('score desc').ids()|join(',') }}</p>
+{% set r = app('request') %}
+{% set q = craft.entries.section('articles').status(r.query('all') ? null : 'live') %}
+{% if r.query('site') %}{% set q = q.site(r.query('site')) %}{% endif %}
+<p id="ids">{{ q.search(r.query('q')).orderBy('score desc').ids()|join(',') }}</p>

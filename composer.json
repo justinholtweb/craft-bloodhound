@@ -77,7 +77,7 @@
         "handle": "bloodhound",
         "developer": "Justin Holt",
         "developerUrl": "https://justinholt.com",
-        "documentationUrl": "https://github.com/justinholtweb/craft-bloodhound",
+        "documentationUrl": "https://justinholt.com/plugins/craft-bloodhound/docs",
         "changelogUrl": "https://raw.githubusercontent.com/justinholtweb/craft-bloodhound/main/CHANGELOG.md",
         "class": "JustinHoltWeb\\Bloodhound\\Plugin"
     }

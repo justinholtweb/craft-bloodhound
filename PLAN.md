@@ -88,6 +88,19 @@ engine works unchanged.
   `CraftSearch` takeover already covers GraphQL `search:` (verified incl. `orderBy: "score desc"`;
   `searchTermOptions` turns search into an array → Craft). Harness: `gql-fixtures.php` (3 schemas/tokens,
   cleaned up at the end); with Commerce, products over GraphQL verified too. 114 / 119 / 97 green on beta.1.
+- **2026-11-18 — Multisite verified, sidebar link.** Harness: `tests/Harness/multisite-fixtures.php` adds an `fr`
+  site on a snapshot (Craft's ResaveElements job fails to serialize a Closure while propagating — Craft beta bug;
+  entries propagate anyway). Per-site indexes, per-site disable, GraphQL `site`, Pro takeover on fr all verified on
+  three engines (142 / 147 / 120). Found + fixed: an unknown site handle in search reached Scout's Typesense
+  engine, which **created** `…_nope` collections — `Indexer::engineIndex()` now rejects unknown sites, search
+  returns empty, commands error. Found + fixed: interrupted Typesense swaps left orphan `{name}_YmdHis`
+  collections forever — `TypesenseSchema::dropBuilds()` after each swap and on flush. Harness gotchas: the
+  harness's custom fields aren't translatable (a French value overwrites English); `ddev snapshot restore` can
+  leave MySQL's FULLTEXT index on `searchindex` returning nothing — `ALTER TABLE searchindex ENGINE=InnoDB`.
+  Sidebar: `showInCpNav` (default on) sets `hasCpSection`; `getCpNavItem()` → utilities/bloodhound, hidden
+  without `utility:bloodhound`; `cpNavLabel`; `cpNavIcon` via `IconPicker->sets('*')`, regex-validated, and
+  `Settings::isIcon()` (system icon file or icon-set SVG) at render. Not done: per-site language hints to
+  engines (Typesense `locale`, Meilisearch `localizedAttributes`) — matters for CJK/Thai.
 - Open: Algolia (needs a paid account to verify). - **2026-11-18 — Scout `database` driver tested and dropped.** `DatabaseEngine::update()` stores nothing
   and searches query the model's own table (`search_documents`, which doesn't exist): import reported
   "3 documents", every search failed. `CollectionEngine` works the same way. `SearchDocument::engine()` now

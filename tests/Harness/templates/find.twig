@@ -1,6 +1,6 @@
 {# Bloodhound harness: any index (?index=), optional filter (?key=&value=) #}
 {% set r = app('request') %}
-{% set results = bloodhound.search(r.query('index'), r.query('q'), {perPage: 50, where: r.query('key') ? {(r.query('key')): r.query('value')} : {}}) %}
+{% set results = bloodhound.search(r.query('index'), r.query('q'), {perPage: 50, site: r.query('site') ?: null, where: r.query('key') ? {(r.query('key')): r.query('value')} : {}}) %}
 <p id="total">{{ results.total }}</p>
 <p id="error">{{ results.error ?? '' }}</p>
 <ol id="hits">{% for el in results %}<li data-id="{{ el.id }}">{{ el }}</li>{% endfor %}</ol>

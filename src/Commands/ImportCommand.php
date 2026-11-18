@@ -21,6 +21,12 @@ class ImportCommand extends Command
 
     public function handle(Indexes $indexes, Indexer $indexer): int
     {
+        if (($s = $this->option('site')) && ! in_array((string) $s, $indexer->siteHandles(), true)) {
+            $this->components->error("Unknown site “{$s}”. Sites: ".implode(', ', $indexer->siteHandles()).'.');
+
+            return self::FAILURE;
+        }
+
         $targets = ($h = $this->argument('index')) ? array_filter([$indexes->get((string) $h)]) : array_values($indexes->all());
 
         if ($targets === []) {

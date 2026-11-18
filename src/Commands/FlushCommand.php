@@ -19,6 +19,12 @@ class FlushCommand extends Command
 
     public function handle(Indexes $indexes, Indexer $indexer): int
     {
+        if (($s = $this->option('site')) && ! in_array((string) $s, $indexer->siteHandles(), true)) {
+            $this->components->error("Unknown site “{$s}”. Sites: ".implode(', ', $indexer->siteHandles()).'.');
+
+            return self::FAILURE;
+        }
+
         $index = $indexes->get((string) $this->argument('index'));
 
         if ($index === null) {

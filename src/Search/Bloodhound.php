@@ -50,6 +50,13 @@ class Bloodhound
             return new SearchResults([], 0, $page, $perPage, $query);
         }
 
+        // An unknown site (e.g. from a query string) finds nothing, without asking the engine.
+        if (! in_array($site, $this->indexer->siteHandles(), true)) {
+            Log::warning("Bloodhound search on {$index}: unknown site “{$site}”.");
+
+            return new SearchResults([], 0, $page, $perPage, $query);
+        }
+
         try {
             $builder = new Builder(SearchDocument::for($this->indexer->engineIndex($definition, $site), [], $definition), $query);
 

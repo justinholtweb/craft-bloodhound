@@ -41,7 +41,7 @@ template global.
 | --- | --- | --- |
 | `page` | `1` | |
 | `perPage` | `20` | Capped at 100. |
-| `site` | current site | A site handle. Each site has its own index. |
+| `site` | current site | A site handle. Each site has its own index; an unknown handle finds nothing. |
 | `where` | none | Attribute → value, e.g. `{section: 'news'}`. |
 
 Filterable attributes are `siteId` plus `section` and `type` for entries, `volume` and `kind` for

@@ -16,6 +16,9 @@
 - Pro: synonyms (pushed to Meilisearch and Typesense on settings save) and stop words.
 - Pro: zero-downtime rebuilds — `craft:bloodhound:import --swap`, and the utility's Rebuild.
 - Scout's `database` and `collection` drivers are refused with a clear message: they search model tables and can't hold Bloodhound's documents.
+- Multisite: one engine index per site; an unknown site handle finds nothing and never creates an engine index, and commands reject it.
+- A sidebar link to the index health page, with an optional custom label and icon (Craft icons or custom icon sets); can be switched off.
+- Typesense: builds left by an interrupted swap rebuild are removed by the next swap and by `flush`.
 - Every engine searches the same fields (title, then the index's fields), so results don't depend on the engine.
 - `bloodhound.search()` for Twig and `$bloodhound->search()` for Blade, returning live elements in rank order.
 - GraphQL: a `bloodhoundSearch` query (Lite and Pro). Each index is a schema permission; hits, totals and pages only ever count elements the schema can read, and filters must name a filterable attribute.

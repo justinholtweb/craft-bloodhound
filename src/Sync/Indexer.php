@@ -7,6 +7,7 @@ namespace JustinHoltWeb\Bloodhound\Sync;
 use CraftCms\Cms\Element\Contracts\ElementInterface;
 use CraftCms\Cms\Support\Facades\Sites;
 use Illuminate\Database\Eloquent\Collection;
+use InvalidArgumentException;
 use JustinHoltWeb\Bloodhound\Documents\DocumentBuilder;
 use JustinHoltWeb\Bloodhound\Documents\SearchDocument;
 use JustinHoltWeb\Bloodhound\Engines\TypesenseSchema;
@@ -198,8 +199,17 @@ class Indexer
         $engine->deleteIndex($name);
     }
 
+    /**
+     * The engine index for an index and site. The site must exist: a handle from
+     * template input must never name a new engine index (Scout's Typesense engine
+     * would create the collection on first search).
+     */
     public function engineIndex(IndexDefinition $index, string $siteHandle): string
     {
+        if (! in_array($siteHandle, $this->siteHandles(), true)) {
+            throw new InvalidArgumentException("Unknown site “{$siteHandle}”.");
+        }
+
         return $index->engineIndexName((string) config('scout.prefix', '').($this->settings->prefix() ?? ''), $siteHandle);
     }
 

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace JustinHoltWeb\Bloodhound;
 
+use CraftCms\Cms\Cp\Icons;
+use CraftCms\Cms\Cp\IconSets;
 use CraftCms\Cms\Plugin\PluginSettings;
 use CraftCms\Cms\Support\Env;
 
@@ -27,6 +29,22 @@ class Settings extends PluginSettings
      * @var array<array-key, mixed>|null
      */
     public ?array $indexes = [];
+
+    /** Show a sidebar link to Bloodhound's index health page (Utilities → Bloodhound). */
+    public bool $showInCpNav = true;
+
+    /**
+     * What the sidebar link says. Null uses “Bloodhound”. Only the sidebar changes:
+     * page titles and the plugin list keep the plugin's name, so docs still match.
+     */
+    public ?string $cpNavLabel = null;
+
+    /**
+     * The sidebar icon: a Craft icon name (`magnifying-glass`) or a custom icon set
+     * icon (`set:name`), as the icon picker saves it. Null uses Bloodhound's own icon.
+     * File paths and raw SVG aren't accepted.
+     */
+    public ?string $cpNavIcon = null;
 
     /** Pro: answer Craft's own `.search()` from the engine where an index covers the query. */
     public bool $replaceCraftSearch = false;
@@ -72,6 +90,33 @@ class Settings extends PluginSettings
         return self::words((string) $this->stopWords, ",\n");
     }
 
+    /** The sidebar label, or null for the plugin's name. */
+    public function navLabel(): ?string
+    {
+        $label = trim((string) $this->cpNavLabel);
+
+        return $label === '' ? null : $label;
+    }
+
+    /** The sidebar icon if it names a real Craft or icon-set icon, else null. */
+    public function navIcon(): ?string
+    {
+        $icon = trim((string) $this->cpNavIcon);
+
+        return $icon !== '' && self::isIcon($icon) ? $icon : null;
+    }
+
+    public static function isIcon(string $icon): bool
+    {
+        if ($custom = IconSets::parse($icon)) {
+            $svg = rescue(fn () => app(IconSets::class)->getIconSetByHandle($custom[0])?->getSvg($custom[1]), null, false);
+
+            return is_string($svg) && stripos($svg, '<svg') !== false;
+        }
+
+        return (bool) preg_match('/^[\da-z\-]+$/D', $icon) && is_file(Icons::resolveIconPath($icon));
+    }
+
     public function prefix(): ?string
     {
         $prefix = Env::parse($this->indexPrefix === null ? null : trim($this->indexPrefix));
@@ -94,6 +139,8 @@ class Settings extends PluginSettings
     {
         return [
             'indexPrefix' => ['nullable', 'string', 'max:64'],
+            'cpNavLabel' => ['nullable', 'string', 'max:100'],
+            'cpNavIcon' => ['nullable', 'string', 'max:100', 'regex:/^([a-zA-Z][\w\-]*:)?[\w\-]+$/'],
             'indexes' => ['nullable', 'array'],
             'indexes.*.handle' => ['required', 'regex:/^[a-z][a-z0-9_]{0,47}$/', 'distinct'],
             'indexes.*.elementType' => ['required', 'in:entries,assets,users,products'],

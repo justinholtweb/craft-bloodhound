@@ -19,6 +19,8 @@ ids() { curl -sk "$U/bh/$1?q=$2&page=${3:-1}" | grep -oE 'data-id="[0-9]+"' | gr
 total() { curl -sk "$U/bh/$1?q=$2" | grep -oE '<p id="total">[0-9]+' | grep -oE '[0-9]+$'; }
 settings() { tk "\$p=CraftCms\\Cms\\Support\\Facades\\Plugins::getPlugin('bloodhound'); CraftCms\\Cms\\Support\\Facades\\Plugins::savePluginSettings(\$p, $1); echo 1;" >/dev/null; }
 settle() { ddev exec "for i in 1 2 3 4 5 6 7 8 9 10; do curl -s -H 'Authorization: Bearer ${MEILI_KEY:-ddev}' 'http://meilisearch:7700/tasks?statuses=enqueued,processing&limit=1' 2>/dev/null | grep -q '\"total\":0' && break; sleep 0.3; done" >/dev/null 2>&1 || sleep 1; }
+cids() { curl -sk "$U/bh/$1?q=$2${3:-}" | grep -o '<p id="ids">[^<]*' | sed 's/<p id="ids">//'; }
+edition() { tk "CraftCms\\Cms\\Support\\Facades\\Plugins::switchEdition('bloodhound', '$1'); echo 1;" >/dev/null; }
 entry() { tk "\$e=CraftCms\\Cms\\Entry\\Elements\\Entry::find()->slug('$1')->status(null)->one(); $2 echo CraftCms\\Cms\\Support\\Facades\\Elements::saveElement(\$e) ? 'saved' : json_encode(\$e->errors()->all());"; }
 
 settings "['queueUpdates' => false, 'indexPrefix' => 'harness_', 'indexes' => [['handle' => 'articles', 'elementType' => 'entries', 'sources' => 'articles', 'fields' => 'summary, customers']]]"
@@ -74,7 +76,7 @@ settings "['queueUpdates' => true]"
 tk 'Illuminate\Support\Facades\DB::table("jobs")->where("payload","like","%SyncElements%")->delete(); echo 1;' >/dev/null
 entry second-article-2 '$e->setFieldValue("summary", "Queued about airships.");' >/dev/null; settle
 ok "queued mode: not indexed until the job runs" "$(total twig airships)" "0"
-ok "queued mode: one job per site queued" "$(tk 'echo Illuminate\Support\Facades\DB::table("jobs")->where("payload","like","%SyncElements%")->count();')" "1"
+ok "queued mode: one job per site queued" "$(tk 'echo Illuminate\Support\Facades\DB::table("jobs")->where("payload","like","%SyncElements%")->count();')" "$(tk 'echo CraftCms\Cms\Support\Facades\Sites::getAllSites()->count();')"
 ddev artisan queue:work --queue=default --stop-when-empty >/dev/null 2>&1; settle
 ok "queued mode: indexed after the job" "$(ids twig airships)" "10"
 settings "['queueUpdates' => false]"
@@ -207,6 +209,35 @@ cp .env /tmp/bh-env.bak; sed -i '' 's/^SCOUT_DRIVER=.*/SCOUT_DRIVER=meilisearch/
 ok "gql: engine down → empty results with an error, not a failed request" "$(gq full '{ bloodhoundSearch(index: "articles", query: "momentumx") { error elements { id } } }' 'j(b["error"], len(b["elements"]))')" "Search is temporarily unavailable./0"
 cp /tmp/bh-env.bak .env; sleep 1
 
+# ---- Multisite (only when the harness has the `fr` site: tests/Harness/multisite-fixtures.php) ----
+if [ "$(tk "echo CraftCms\\Cms\\Support\\Facades\\Sites::getSiteByHandle('fr') ? 'yes' : 'no';")" = yes ]; then
+  ddev artisan craft:bloodhound:import articles --fresh >/dev/null 2>&1; settle
+  ok "multisite: one engine index per site" "$(ddev artisan craft:bloodhound:status 2>/dev/null | grep -oE 'harness_articles_(default|fr)' | sort -u | tr '\n' ' ')" "harness_articles_default harness_articles_fr "
+  ok "multisite: each site's index is in step" "$(ddev artisan craft:bloodhound:status 2>/dev/null | grep 'harness_articles_fr' | awk -F'|' '{gsub(/ /,""); print $3"/"$4"/"$5"/"$6"/"$7}')" "3/3/0/0/0"
+  for e in find find-blade; do
+    ok "multisite $e: the French site's own title" "$(fids $e articles bonjour '&site=fr')" "8 "
+    ok "multisite $e: the default site doesn't have it" "$(fids $e articles bonjour)" ""
+    # The stand-in engine also searches URLs (hello-momentum-2), so only real engines can show this.
+    [ "$DRIVER" != harness ] && ok "multisite $e: the English title isn't in the French index" "$(fids $e articles 'hello+momentum' '&site=fr' | grep -c 8)" "0"
+  done
+  [ "$DRIVER" != harness ] && ok "multisite: accents don't need typing (montgolfieres)" "$(fids find articles montgolfieres '&site=fr')" "8 "
+  ok "multisite: unknown site → no results, no error, no crash" "$(curl -sk "$U/bh/find?index=articles&q=momentum&site=nope" | grep -oE '<p id="(total|error)">[^<]*' | sed 's/.*>//' | tr '\n' '/')" "0//"
+  ok "multisite: an unknown site never creates an engine index" "$(ddev artisan craft:bloodhound:status 2>/dev/null | grep -c '_nope')/$(ddev artisan craft:bloodhound:import articles --site=nope 2>&1 | grep -c 'Unknown site')" "0/1"
+  ftoggle() { tk "\$e=CraftCms\\Cms\\Entry\\Elements\\Entry::find()->id(8)->site('fr')->status(null)->one(); \$e->enabledForSite=$1; echo CraftCms\\Cms\\Support\\Facades\\Elements::saveElement(\$e) ? 'saved' : 'failed';"; }
+  ok "multisite: disabling for one site removes it from that site's index only" "$(ftoggle false >/dev/null; settle; fids find articles bonjour '&site=fr')/$(fids find articles 'hello+momentum' | grep -c 8)" "/1"
+  ok "multisite: re-enabling for that site brings it back" "$(ftoggle true >/dev/null; settle; fids find articles bonjour '&site=fr')" "8 "
+  tk "require 'storage/bh-gql-fixtures.php';" >/dev/null
+  tk "\$s=collect(CraftCms\\Cms\\Support\\Facades\\Gql::getSchemas())->first(fn(\$s)=>\$s->name==='bh_full'); \$s->scope=[...\$s->scope, 'sites.'.CraftCms\\Cms\\Support\\Facades\\Sites::getSiteByHandle('fr')->uid.':read']; CraftCms\\Cms\\Support\\Facades\\Gql::saveSchema(\$s); CraftCms\\Cms\\Support\\Facades\\Gql::invalidateCaches(); echo 1;" >/dev/null
+  ok "multisite gql: site argument searches that site's index" "$(gq full '{ bloodhoundSearch(index: "articles", query: "bonjour", site: "fr") { elements { id title } } }' 'j(*[e["id"] + ":" + e["title"] for e in b["elements"]])')" "8:Bonjour Montgolfière"
+  ok "multisite gql: a site the schema can't read is refused" "$(gq nosection '{ bloodhoundSearch(index: "articles", query: "bonjour", site: "fr") { total } }' '0')" "ERR:This schema can’t read the “fr” site."
+  edition pro; settings "['replaceCraftSearch' => true]"
+  for e in craft craft-blade; do
+    [ "$DRIVER" != harness ] && ok "multisite pro $e: .search() on the French site answered by its index (typo)" "$(cids $e bonjur '&site=fr')" "8"
+  done
+  ok "multisite pro: a query across both sites stays with Craft" "$(tk "echo json_encode(CraftCms\\Cms\\Entry\\Elements\\Entry::find()->section('articles')->site('*')->unique()->search('bonjur')->ids());")" "[]"
+  settings "['replaceCraftSearch' => false]"; edition lite
+fi
+
 # ---- Products (only when Craft Commerce is installed and enabled in the harness) ----
 COMMERCE=$(tk "echo JustinHoltWeb\Bloodhound\Indexes\Indexes::commerceAvailable() ? 'yes' : 'no';")
 if [ "$COMMERCE" = yes ]; then
@@ -241,8 +272,6 @@ fi
 # ---- Pro ----
 cp "$(dirname "$0")/templates/craft.twig" "$(dirname "$0")/templates/craft-blade.blade.php" "$H/resources/views/bh/" 2>/dev/null \
   || cp /Users/jholt/Sites/craft-bloodhound/tests/Harness/templates/craft{.twig,-blade.blade.php} "$H/resources/views/bh/"
-cids() { curl -sk "$U/bh/$1?q=$2${3:-}" | grep -o '<p id="ids">[^<]*' | sed 's/<p id="ids">//'; }
-edition() { tk "CraftCms\\Cms\\Support\\Facades\\Plugins::switchEdition('bloodhound', '$1'); echo 1;" >/dev/null; }
 
 edition lite; settings "['replaceCraftSearch' => false]"
 ok "lite: Craft's search can't take a typo" "$(cids craft momentm)" ""
@@ -293,7 +322,15 @@ if [ "$DRIVER" != harness ]; then
     ok "typesense swap: index is an alias now" "$(ts aliases/harness_articles_default | grep -o 'collection_name' | head -1)" "collection_name"
     ok "typesense swap: second swap removed the old collection (one left)" "$(ts collections | grep -o '"name":"harness_articles_default[^"]*"' | wc -l | tr -d ' ')" "1"
     ok "typesense swap: health reads through the alias" "$(counts)" "0/0/0"
+    # A build left by an interrupted swap is cleaned up by the next swap, and by flush.
+    tsmk() { ddev exec "curl -s -X POST -H 'X-TYPESENSE-API-KEY: ddev' -H 'Content-Type: application/json' http://typesense:8108/collections -d '{\"name\":\"$1\",\"fields\":[{\"name\":\"title\",\"type\":\"string\"}]}'" >/dev/null 2>&1; }
+    tsmk harness_articles_default_20200101000000; tsmk harness_articles_default_keepme
+    ddev artisan craft:bloodhound:import articles --site=default --swap >/dev/null 2>&1; settle
+    ok "typesense swap: an interrupted build is removed by the next swap; other names are left alone" "$(ts collections | grep -o '"name":"harness_articles_default[^"]*"' | sort | tr '\n' ' ' | sed -E 's/default_[0-9]{14}/default_BUILD/g')" '"name":"harness_articles_default_BUILD" "name":"harness_articles_default_keepme" '
+    tsmk harness_articles_default_20200101000000
     ddev artisan craft:bloodhound:flush articles --site=default >/dev/null 2>&1
+    ok "typesense: flush also removes interrupted builds (only the unrelated collection stays)" "$(ts collections | grep -o '"name":"harness_articles_default[^"]*"' | tr '\n' ' ')" '"name":"harness_articles_default_keepme" '
+    ddev exec "curl -s -X DELETE -H 'X-TYPESENSE-API-KEY: ddev' http://typesense:8108/collections/harness_articles_default_keepme" >/dev/null 2>&1
     ok "typesense: flush removes alias and collection" "$(ts collections | grep -c 'harness_articles_default')/$(ts aliases | grep -c 'harness_articles_default')" "0/0"
   else
     ok "meilisearch swap: temp index cleaned up" "$(ddev exec "curl -s -H 'Authorization: Bearer ddev' http://meilisearch:7700/indexes/harness_articles_default__next" 2>/dev/null | grep -o 'index_not_found' | head -1)" "index_not_found"
@@ -331,6 +368,21 @@ ok "database driver: saving an entry still works" "$(entry hello-momentum '')" "
 cp /tmp/bh-env.bak .env; sleep 1
 
 ok "gql: CP schema editor offers each index as a permission" "$(curl -sk -b "$J" "$U/admin/graphql/schemas/new" | grep -c 'bloodhound.articles:read' | awk '{print ($1>0)?"yes":"no"}')" "yes"
+# Sidebar link (Utilities → Bloodhound) with a custom label and icon. Craft's own Utilities
+# submenu links there too, so "shown" means two links and "hidden" means one.
+navinfo() { curl -sk -b "$J" "$U/admin/dashboard" | python3 -c 'import re,sys
+h=sys.stdin.read(); items=[m.group(0) for m in re.finditer(r"\{\"errors\":\[\],\"label\":\"[^\"]*\"[^{}]*?utilities\\\/bloodhound[^{}]*", h)]
+def lab(i): return re.search(r"\"label\":\"([^\"]*)\"", i).group(1)
+def ico(i):
+    m=re.search(r"\"icon\":\"([^\"]*)\"", i); return m.group(1) if m else ("own" if "\"iconSvg\":\"" in i else "none")
+print(str(len(items)) + ":" + ",".join(sorted(lab(i) + "=" + ico(i) for i in items)))'; }
+navset() { tk "\$p=CraftCms\\Cms\\Support\\Facades\\Plugins::getPlugin('bloodhound'); echo CraftCms\\Cms\\Support\\Facades\\Plugins::savePluginSettings(\$p, $1) ? 'ok' : implode(' ', \$p->getSettings()->errors()->all());"; }
+ok "sidebar: shown by default, Bloodhound's own icon" "$(navset "['showInCpNav' => true, 'cpNavLabel' => null, 'cpNavIcon' => null]" >/dev/null; navinfo | grep -o 'Bloodhound=own')" "Bloodhound=own"
+ok "sidebar: custom label and Craft icon" "$(navset "['cpNavLabel' => 'Search tools', 'cpNavIcon' => 'magnifying-glass']" >/dev/null; navinfo | grep -o 'Search tools=[a-z-]*')" "Search tools=magnifying-glass"
+ok "sidebar: a path or SVG isn't accepted as an icon" "$(navset "['cpNavIcon' => '../../icons/x.svg']")" "The cp nav icon field format is invalid."
+ok "sidebar: an icon that doesn't exist falls back to Bloodhound's own" "$(navset "['cpNavIcon' => 'nosuchset:nothing']" >/dev/null; navinfo | grep -o 'Search tools=[a-z-]*')" "Search tools=own"
+ok "sidebar: can be switched off" "$(navset "['showInCpNav' => false]" >/dev/null; navinfo | cut -d: -f1)" "1"
+navset "['showInCpNav' => true, 'cpNavLabel' => null, 'cpNavIcon' => null]" >/dev/null
 ok "settings page loads" "$(curl -sk -b "$J" -o /dev/null -w '%{http_code}' "$U/admin/settings/plugins/bloodhound")" "200"
 
 entry second-article-2 '$e->setFieldValue("summary", "The related one.");' >/dev/null
