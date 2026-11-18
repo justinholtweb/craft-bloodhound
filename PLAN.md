@@ -3,7 +3,7 @@
 Laravel Scout for Craft elements — index entries, assets, users or products into Meilisearch, Typesense, Algolia or the database driver.
 
 - Package: `justinholtweb/craft-bloodhound` · handle `bloodhound` · namespace `JustinHoltWeb\Bloodhound`
-- Editions: Lite / Pro · pricing: Lite free / Pro $79 (provisional)
+- Editions: Lite / Pro · pricing: Lite free / Pro $49
 - Laravel integration: laravel/scout — Scout v11, Laravel 13 compatible. Engines: Meilisearch, Typesense, Algolia, database.
 - Craft 6 only, native Laravel (no `craftcms/yii2-adapter`, ever). Follow
   `~/Sites/plugin-testing-craft6/porting/COOKBOOK.md` for Craft 6 idioms.
@@ -49,8 +49,21 @@ engine works unchanged.
   unresolved field — one always-empty custom field broke every search. Declare `string[]`. Typesense also
   rejects integer ids and a document missing a non-optional field. Harness entry 2 had an empty title
   (fails validation on save); the Bloodhound checks now title it.
-- Open: Algolia (needs a paid account to verify); Pro: take over Craft's own search, synonyms,
-  zero-downtime reindex.
+- **2026-11-18 — Pro done** (Lite free / Pro $49). `CraftSearch` extends Craft's `Search` service (swapped
+  in via `app->extend` + facade reset, Pro only): `.search()` goes to the engine only when Craft's candidate
+  ids (query minus search) are all live members of one index on one site — checked with a count, never
+  inferred from params — else `parent::searchElements()`. Synonyms (mutual groups; Meilisearch
+  `synonyms`, Typesense collection synonyms `bloodhound_*`) pushed on `PluginSettingsSaved`; stop words
+  stripped from query text (engine-neutral). Swap rebuilds: Meilisearch `__next` + `swapIndexes`,
+  Typesense timestamped collection + alias; re-sync of elements changed during the build. Harness:
+  61 / 74 / 79 checks green (file engine / Meilisearch / Typesense).
+- Gotchas: Craft 6 `orderBy('score')` is **ascending** (least relevant first) — templates need
+  `'score desc'`. Craft 6 reads `icon.svg` from src/ then resources/, but `icon-mask.svg` only from
+  resources/.
+- Branding: icon traced from Justin's artwork (src/icon.jpg) with potrace onto the family tile, #572261.
+  Marketing site: justinholt.com/plugins/craft-bloodhound (staged, `showOnSite` false), docs in docs/,
+  promos in promos/.
+- Open: Algolia (needs a paid account to verify).
 
 ## Phases
 1. **Indexes (Lite).** CP-defined indexes: element type, sources (sections/volumes/groups), condition builder,

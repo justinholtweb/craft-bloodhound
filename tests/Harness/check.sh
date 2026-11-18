@@ -130,6 +130,72 @@ if [ "$DRIVER" = typesense ]; then
   settings "['indexes' => [['handle' => 'articles', 'elementType' => 'entries', 'sources' => 'articles', 'fields' => 'summary, customers']]]"
 fi
 
+# ---- Pro ----
+cp "$(dirname "$0")/templates/craft.twig" "$(dirname "$0")/templates/craft-blade.blade.php" "$H/resources/views/bh/" 2>/dev/null \
+  || cp /Users/jholt/Sites/craft-bloodhound/tests/Harness/templates/craft{.twig,-blade.blade.php} "$H/resources/views/bh/"
+cids() { curl -sk "$U/bh/$1?q=$2${3:-}" | grep -o '<p id="ids">[^<]*' | sed 's/<p id="ids">//'; }
+edition() { tk "CraftCms\\Cms\\Support\\Facades\\Plugins::switchEdition('bloodhound', '$1'); echo 1;" >/dev/null; }
+
+edition lite; settings "['replaceCraftSearch' => false]"
+ok "lite: Craft's search can't take a typo" "$(cids craft momentm)" ""
+ddev artisan craft:bloodhound:import articles --swap >/dev/null 2>&1; ok "lite: import --swap is refused" "$?" "1"
+edition pro
+settings "['replaceCraftSearch' => false]"
+ok "pro, takeover off: still Craft's search" "$(cids craft momentm)" ""
+settings "['replaceCraftSearch' => true]"
+for e in craft craft-blade; do
+  [ "$DRIVER" != harness ] && ok "pro $e: .search() answered by the engine (typo tolerant)" "$(cids $e momentm | tr ',' '\n' | sort -n | tr '\n' ' ')" "2 8 "
+  ok "pro $e: engine rank order kept with orderBy('score desc')" "$(cids $e momentum | cut -d, -f1)" "$(ids twig momentum | cut -d, -f1)"
+done
+ok "pro: query covering disabled entries falls back to Craft (no typo match)" "$(cids craft momentm '&all=1')" ""
+ok "pro: fallback still answers exact words" "$(cids craft momentum '&all=1' | tr ',' '\n' | sort -n | tr '\n' ' ')" "2 8 "
+ok "pro: Craft search syntax goes to Craft" "$(cids craft 'title:momentm')" ""
+ok "pro: disabled entry never comes back from the engine path" "$(entry second-article-2 '$e->enabled = false;')/$(cids craft second)" "saved/"
+entry second-article-2 '$e->enabled = true;' >/dev/null; settle
+cp .env /tmp/bh-env.bak; sed -i '' 's/^SCOUT_DRIVER=.*/SCOUT_DRIVER=meilisearch/; s#^MEILISEARCH_HOST=.*#MEILISEARCH_HOST=http://127.0.0.1:1#' .env; grep -q '^MEILISEARCH_HOST=' .env || echo 'MEILISEARCH_HOST=http://127.0.0.1:1' >> .env
+ok "pro: engine down → Craft's search answers instead" "$(cids craft momentum | tr ',' '\n' | sort -n | tr '\n' ' ')" "2 8 "
+cp /tmp/bh-env.bak .env; sleep 1
+
+if [ "$DRIVER" != harness ]; then
+  ok "pro: no synonym yet" "$(total twig framework)" "0"
+  settings "['synonyms' => [['term' => 'framework', 'synonyms' => 'craft, toolkit']]]"; settle
+  ok "pro: synonym pushed on settings save (framework → craft)" "$(total twig framework)" "$(total twig craft)"
+  ok "pro: synonyms work in every direction (toolkit)" "$(total twig toolkit)" "$(total twig craft)"
+  settings "['synonyms' => []]"; settle
+  ok "pro: removed synonym is gone from the engine" "$(total twig framework)" "0"
+fi
+settings "['stopWords' => \"the, a\nof\"]"
+ok "pro: stop words dropped from queries" "$(tk 'echo app(JustinHoltWeb\Bloodhound\Search\Bloodhound::class)->queryText("The history of  Craft");')" "history Craft"
+ok "pro: all-stop-word query searched as typed" "$(tk 'echo app(JustinHoltWeb\Bloodhound\Search\Bloodhound::class)->queryText("the a");')" "the a"
+settings "['stopWords' => null]"
+
+if [ "$DRIVER" != harness ]; then
+  # Zero-downtime rebuild: search keeps answering while the swap runs.
+  ( ddev artisan craft:bloodhound:import articles --site=default --swap >/dev/null 2>&1; echo done > /tmp/bh-swap.done ) &
+  rm -f /tmp/bh-swap.done; seen=""
+  for i in $(seq 1 40); do seen="$seen$(total twig momentum)"; [ -f /tmp/bh-swap.done ] && break; done
+  wait; settle
+  ok "pro swap: search answered throughout the rebuild ($(echo -n "$seen" | wc -c | tr -d ' ') probes)" "$(echo "$seen" | tr -d '2')" ""
+  ok "pro swap: index complete after the swap" "$(counts)" "0/0/0"
+  ok "pro swap: searching works after the swap" "$(total twig momentum)" "2"
+  ddev artisan craft:bloodhound:import articles --site=default --swap >/dev/null 2>&1; settle
+  if [ "$DRIVER" = typesense ]; then
+    ts() { ddev exec "curl -s -H 'X-TYPESENSE-API-KEY: ddev' http://typesense:8108/$1" 2>/dev/null; }
+    ok "typesense swap: index is an alias now" "$(ts aliases/harness_articles_default | grep -o 'collection_name' | head -1)" "collection_name"
+    ok "typesense swap: second swap removed the old collection (one left)" "$(ts collections | grep -o '"name":"harness_articles_default[^"]*"' | wc -l | tr -d ' ')" "1"
+    ok "typesense swap: health reads through the alias" "$(counts)" "0/0/0"
+    ddev artisan craft:bloodhound:flush articles --site=default >/dev/null 2>&1
+    ok "typesense: flush removes alias and collection" "$(ts collections | grep -c 'harness_articles_default')/$(ts aliases | grep -c 'harness_articles_default')" "0/0"
+  else
+    ok "meilisearch swap: temp index cleaned up" "$(ddev exec "curl -s -H 'Authorization: Bearer ddev' http://meilisearch:7700/indexes/harness_articles_default__next" 2>/dev/null | grep -o 'index_not_found' | head -1)" "index_not_found"
+  fi
+  ddev artisan craft:bloodhound:import articles >/dev/null 2>&1; settle
+  ddev artisan queue:work --queue=default --stop-when-empty >/dev/null 2>&1
+  ok "pro: CP Rebuild (swap) queued and ran" "$(post -d index=articles -d site=default "$U/admin/bloodhound/rebuild")/$(ddev artisan queue:work --queue=default --stop-when-empty >/dev/null 2>&1; settle; counts)" "302/0/0/0"
+fi
+settings "['replaceCraftSearch' => false]"
+edition lite
+
 ok "settings page loads" "$(curl -sk -b "$J" -o /dev/null -w '%{http_code}' "$U/admin/settings/plugins/bloodhound")" "200"
 
 entry second-article-2 '$e->setFieldValue("summary", "The related one.");' >/dev/null

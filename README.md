@@ -2,8 +2,12 @@
 
 Laravel Scout for Craft elements — index entries, assets, users or products into Meilisearch, Typesense, Algolia or the database driver.
 
-> **Status:** phases 1–2 (indexes, sync, search from Twig + Blade, index health) verified against Meilisearch
-> and Typesense in the Craft 6 harness. See [PLAN.md](PLAN.md).
+> [!WARNING]
+> **Craft 6 only, and in beta.** Bloodhound is a native **Craft CMS 6** plugin. Craft 6 is still in beta,
+> and so is Bloodhound (`6.0.0-beta.1`). Try it on development and staging sites first and **use caution on
+> production**: keep backups, and expect changes between betas. It does not run on Craft 5.
+
+Docs: [justinholt.com/plugins/craft-bloodhound](https://justinholt.com/plugins/craft-bloodhound/docs/). See [PLAN.md](PLAN.md).
 
 ## Requirements
 
@@ -64,9 +68,27 @@ and alt text). URLs and handles aren't searched, on any engine. If a Typesense i
 If the engine is unreachable, results are empty and `results.error` holds a generic message (details go
 to the log), and the page still renders.
 
+## Pro: Craft's search, synonyms, zero-downtime rebuilds
+
+- **Craft's own `.search()` answered by the engine** (`replaceCraftSearch`). A front-end query is handed to the
+  engine only when every element it could return is a live member of one index on one site — checked, not
+  guessed. Everything else (the control panel, drafts, disabled entries, other sections, several sites, Craft
+  search syntax like `title:foo`, an engine outage) runs Craft's own search unchanged. Up to 1,000 hits per query.
+  In Craft 6, `orderBy('score')` sorts least relevant first; use `orderBy('score desc')`.
+- **Synonyms** (groups work in every direction, pushed to Meilisearch/Typesense when settings are saved) and
+  **stop words** (dropped from queries on every engine).
+- **Zero-downtime rebuilds:** `craft:bloodhound:import --swap` and the utility's Rebuild build a fresh index and
+  swap it in (Meilisearch index swap, Typesense alias); elements saved meanwhile are re-synced afterwards.
+  The first swap on Typesense replaces the collection with an alias, a gap of one request; every later swap
+  is atomic.
+
 ## Editions and pricing
 
-Lite / Pro — Lite free / Pro $79 (provisional).
+| | Lite | Pro |
+| --- | --- | --- |
+| Price | Free | $49 |
+| Indexes, sync, Twig + Blade search, Meilisearch + Typesense, index health | ✓ | ✓ |
+| Craft's `.search()` from the engine, synonyms, stop words, zero-downtime rebuilds | | ✓ |
 
 ## Development
 

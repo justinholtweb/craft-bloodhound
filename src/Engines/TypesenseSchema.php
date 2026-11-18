@@ -122,6 +122,92 @@ final class TypesenseSchema
     }
 
     /**
+     * Makes the collection's Bloodhound synonyms (ids `bloodhound_…`) match the
+     * settings: multi-way groups upserted, ones no longer configured removed.
+     * Synonyms anyone added by hand are left alone.
+     *
+     * @param  array<string, list<string>>  $groups
+     */
+    public static function syncSynonyms(TypesenseEngine $engine, string $name, array $groups): void
+    {
+        // @phpstan-ignore method.notFound
+        $synonyms = $engine->getCollections()[$name]->getSynonyms();
+        $wanted = [];
+
+        foreach ($groups as $term => $equivalents) {
+            $wanted['bloodhound_'.substr(md5($term), 0, 12)] = array_values(array_unique([$term, ...$equivalents]));
+        }
+
+        foreach ($synonyms->retrieve()['synonyms'] ?? [] as $existing) {
+            $id = (string) ($existing['id'] ?? '');
+            if (str_starts_with($id, 'bloodhound_') && ! isset($wanted[$id])) {
+                $synonyms[$id]->delete();
+            }
+        }
+
+        foreach ($wanted as $id => $words) {
+            $synonyms->upsert($id, ['synonyms' => $words]);
+        }
+    }
+
+    /**
+     * Points `$alias` at `$collection` and drops what it pointed at before. The
+     * first time, `$alias` is still a real collection (Typesense won't alias over
+     * it), so that one is deleted just before the alias is made — a gap of one
+     * request. Every swap after that is a single atomic alias update.
+     */
+    public static function pointAlias(TypesenseEngine $engine, string $alias, string $collection): void
+    {
+        // @phpstan-ignore method.notFound
+        $aliases = $engine->getAliases();
+        // @phpstan-ignore method.notFound
+        $collections = $engine->getCollections();
+
+        try {
+            $previous = (string) ($aliases[$alias]->retrieve()['collection_name'] ?? '');
+        } catch (ObjectNotFound) {
+            $previous = '';
+            try {
+                $collections[$alias]->delete();
+            } catch (ObjectNotFound) {
+                // nothing there yet
+            }
+        }
+
+        $aliases->upsert($alias, ['collection_name' => $collection]);
+
+        if ($previous !== '' && $previous !== $collection) {
+            try {
+                $collections[$previous]->delete();
+            } catch (ObjectNotFound) {
+                // already gone
+            }
+        }
+    }
+
+    /** Deletes an index whether it is a collection or (after a swap rebuild) an alias and its collection. */
+    public static function drop(TypesenseEngine $engine, string $name): void
+    {
+        // @phpstan-ignore method.notFound
+        $aliases = $engine->getAliases();
+        // @phpstan-ignore method.notFound
+        $collections = $engine->getCollections();
+
+        try {
+            $target = (string) ($aliases[$name]->retrieve()['collection_name'] ?? '');
+            $aliases[$name]->delete();
+        } catch (ObjectNotFound) {
+            $target = $name;
+        }
+
+        try {
+            $collections[$target]->delete();
+        } catch (ObjectNotFound) {
+            // nothing to drop
+        }
+    }
+
+    /**
      * Every document as id => dateUpdated, or null when the collection doesn't exist.
      *
      * @return array<int, int|null>|null

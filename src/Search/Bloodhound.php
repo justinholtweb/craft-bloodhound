@@ -12,6 +12,8 @@ use JustinHoltWeb\Bloodhound\Documents\SearchDocument;
 use JustinHoltWeb\Bloodhound\Engines\TypesenseSchema;
 use JustinHoltWeb\Bloodhound\Indexes\IndexDefinition;
 use JustinHoltWeb\Bloodhound\Indexes\Indexes;
+use JustinHoltWeb\Bloodhound\Plugin;
+use JustinHoltWeb\Bloodhound\Settings;
 use JustinHoltWeb\Bloodhound\Sync\Indexer;
 use Laravel\Scout\Builder;
 use Laravel\Scout\Engines\TypesenseEngine;
@@ -29,6 +31,7 @@ class Bloodhound
     public function __construct(
         private readonly Indexes $indexes,
         private readonly Indexer $indexer,
+        private readonly Settings $settings,
     ) {}
 
     /**
@@ -37,7 +40,7 @@ class Bloodhound
     public function search(string $index, ?string $query, array $options = []): SearchResults
     {
         $definition = $this->indexes->get($index) ?? throw new InvalidArgumentException("Unknown Bloodhound index “{$index}”.");
-        $query = trim((string) $query);
+        $query = $this->queryText((string) $query);
         $page = max(1, (int) ($options['page'] ?? 1));
         $perPage = min(100, max(1, (int) ($options['perPage'] ?? 20)));
         $site = (string) ($options['site'] ?? Sites::getCurrentSite()->handle);
@@ -69,6 +72,51 @@ class Bloodhound
         }
 
         return new SearchResults($this->hydrate($definition, $site, $ids), $total, $page, $perPage, $query);
+    }
+
+    /**
+     * Element ids in engine rank order, up to `$max`, for one index and site.
+     * Unlike `search()` this throws on an engine failure, so callers can fall back.
+     *
+     * @return list<int>
+     */
+    public function rankedIds(IndexDefinition $index, string $site, string $query, int $max = 1000): array
+    {
+        $builder = new Builder(SearchDocument::for($this->indexer->engineIndex($index, $site), [], $index), $this->queryText($query));
+        $engine = $builder->model->searchableUsing();
+        $ids = [];
+        $perPage = 250; // Typesense's per_page ceiling
+
+        for ($page = 1; count($ids) < $max; $page++) {
+            $raw = $engine->paginate($builder, $perPage, $page);
+            $hits = array_map(intval(...), $engine->mapIds($raw)->all());
+            array_push($ids, ...$hits);
+
+            if (count($hits) < $perPage || $page * $perPage >= (int) $engine->getTotalCount($raw)) {
+                break;
+            }
+        }
+
+        return array_slice(array_values(array_unique($ids)), 0, $max);
+    }
+
+    /**
+     * The query as sent to the engine: trimmed, and on Pro without the configured
+     * stop words (done here rather than per engine, so every engine behaves the
+     * same). A query made only of stop words is left as typed.
+     */
+    public function queryText(string $query): string
+    {
+        $query = trim($query);
+        $stop = Plugin::isPro() ? array_flip($this->settings->stopWordList()) : [];
+
+        if ($stop === [] || $query === '') {
+            return $query;
+        }
+
+        $kept = array_filter(preg_split('/\s+/u', $query) ?: [], fn (string $w) => ! isset($stop[mb_strtolower($w)]));
+
+        return $kept === [] ? $query : implode(' ', $kept);
     }
 
     /**

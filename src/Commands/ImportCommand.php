@@ -7,13 +7,14 @@ namespace JustinHoltWeb\Bloodhound\Commands;
 use CraftCms\Cms\Console\CraftCommand;
 use Illuminate\Console\Command;
 use JustinHoltWeb\Bloodhound\Indexes\Indexes;
+use JustinHoltWeb\Bloodhound\Plugin;
 use JustinHoltWeb\Bloodhound\Sync\Indexer;
 
 class ImportCommand extends Command
 {
     use CraftCommand;
 
-    protected $signature = 'craft:bloodhound:import {index? : Index handle (default: all)} {--site= : Site handle (default: all)} {--fresh : Flush the engine index first}';
+    protected $signature = 'craft:bloodhound:import {index? : Index handle (default: all)} {--site= : Site handle (default: all)} {--fresh : Flush the engine index first} {--swap : Pro: build a fresh index and swap it in (no gap in search)}';
 
     protected $description = 'Indexes every live element of a Bloodhound index';
 
@@ -27,6 +28,18 @@ class ImportCommand extends Command
             return self::FAILURE;
         }
 
+        if ($this->option('swap') && ! Plugin::isPro()) {
+            $this->components->error('--swap needs Bloodhound Pro.');
+
+            return self::FAILURE;
+        }
+
+        if ($this->option('swap') && $this->option('fresh')) {
+            $this->components->error('Use --swap or --fresh, not both.');
+
+            return self::FAILURE;
+        }
+
         $sites = ($s = $this->option('site')) ? [(string) $s] : $indexer->siteHandles();
 
         foreach ($targets as $index) {
@@ -34,7 +47,7 @@ class ImportCommand extends Command
                 if ($this->option('fresh')) {
                     rescue(fn () => $indexer->flush($index, $site), report: false);
                 }
-                $n = $indexer->import($index, $site);
+                $n = $this->option('swap') ? $indexer->rebuildWithSwap($index, $site) : $indexer->import($index, $site);
                 $this->components->info("{$index->handle} ({$site}) → {$indexer->engineIndex($index, $site)}: {$n} documents");
             }
         }

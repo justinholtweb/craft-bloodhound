@@ -10,6 +10,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use JustinHoltWeb\Bloodhound\Indexes\Indexes;
+use JustinHoltWeb\Bloodhound\Plugin;
 use JustinHoltWeb\Bloodhound\Sync\Indexer;
 
 class RebuildIndex implements ShouldBeUnique, ShouldQueue
@@ -34,7 +35,8 @@ class RebuildIndex implements ShouldBeUnique, ShouldQueue
     public function handle(Indexes $indexes, Indexer $indexer): void
     {
         if (($index = $indexes->get($this->index)) !== null) {
-            $indexer->import($index, $this->siteHandle);
+            // Pro rebuilds into a fresh index and swaps it in, so search never goes empty.
+            Plugin::isPro() ? $indexer->rebuildWithSwap($index, $this->siteHandle) : $indexer->import($index, $this->siteHandle);
         }
     }
 }

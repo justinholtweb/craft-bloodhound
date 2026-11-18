@@ -12,11 +12,12 @@ use JustinHoltWeb\Bloodhound\Documents\SearchDocument;
 use JustinHoltWeb\Bloodhound\Engines\TypesenseSchema;
 use JustinHoltWeb\Bloodhound\Indexes\IndexDefinition;
 use JustinHoltWeb\Bloodhound\Indexes\Indexes;
+use JustinHoltWeb\Bloodhound\Plugin;
 use JustinHoltWeb\Bloodhound\Settings;
 use Laravel\Scout\EngineManager;
 use Laravel\Scout\Engines\Engine;
+use Laravel\Scout\Engines\MeilisearchEngine;
 use Laravel\Scout\Engines\TypesenseEngine;
-use Typesense\Exceptions\ObjectNotFound;
 
 /**
  * Writes documents to the engine. Every write re-reads the element through the
@@ -61,9 +62,9 @@ class Indexer
      *
      * @param  (\Closure(int): void)|null  $progress
      */
-    public function import(IndexDefinition $index, string $siteHandle, ?\Closure $progress = null, int $chunk = 250): int
+    public function import(IndexDefinition $index, string $siteHandle, ?\Closure $progress = null, int $chunk = 250, ?string $into = null): int
     {
-        $name = $this->engineIndex($index, $siteHandle);
+        $name = $into ?? $this->engineIndex($index, $siteHandle);
         $this->prepare($name, $index);
         $done = 0;
         $offset = 0;
@@ -90,6 +91,7 @@ class Indexer
 
         if ($engine instanceof TypesenseEngine) {
             TypesenseSchema::ensure($engine, $name, $index);
+            TypesenseSchema::syncSynonyms($engine, $name, $this->synonyms());
 
             return;
         }
@@ -105,16 +107,98 @@ class Indexer
             'searchableAttributes' => $index->searchableAttributes(),
             'filterableAttributes' => $filterable,
             'sortableAttributes' => ['dateUpdated', ...($index->elementType === 'entries' ? ['postDate'] : [])],
+            // Meilisearch synonyms are one-way per key, so each group is written out in every direction.
+            'synonyms' => (object) self::mutualSynonyms($this->synonyms()),
         ]);
+    }
+
+    /**
+     * Pro: rebuild without a gap. Everything is indexed into a fresh index, which
+     * then replaces the live one in one step (Meilisearch index swap, Typesense
+     * alias), so searches keep answering from the old index until the new one is
+     * complete. Elements saved meanwhile are re-synced afterwards. Engines without
+     * a swap get a normal in-place import.
+     */
+    public function rebuildWithSwap(IndexDefinition $index, string $siteHandle, ?\Closure $progress = null): int
+    {
+        $name = $this->engineIndex($index, $siteHandle);
+        $engine = $this->engine();
+        $started = now()->subSeconds(5);
+
+        if ($engine instanceof MeilisearchEngine) {
+            $next = $name.'__next';
+            rescue(fn () => $engine->deleteIndex($next), report: false);
+            rescue(fn () => $engine->createIndex($name, ['primaryKey' => 'id']), report: false); // swap needs both to exist
+            $count = $this->importOrDrop($index, $siteHandle, $progress, $next);
+            // Tasks run in order: the swap waits for the import, the delete for the swap.
+            // @phpstan-ignore method.notFound
+            $engine->swapIndexes([[$name, $next]]);
+            $engine->deleteIndex($next);
+        } elseif ($engine instanceof TypesenseEngine) {
+            $next = $name.'_'.now()->format('YmdHis');
+            $count = $this->importOrDrop($index, $siteHandle, $progress, $next);
+            TypesenseSchema::pointAlias($engine, $name, $next);
+        } else {
+            return $this->import($index, $siteHandle, $progress);
+        }
+
+        $changed = $this->indexes->query($index, $siteHandle)->dateUpdated('>= '.$started->toIso8601String())->ids();
+        $this->sync($index, $siteHandle, array_map(intval(...), $changed));
+
+        return $count;
+    }
+
+    /** A half-built index from a failed rebuild is removed rather than left behind. */
+    private function importOrDrop(IndexDefinition $index, string $siteHandle, ?\Closure $progress, string $into): int
+    {
+        try {
+            return $this->import($index, $siteHandle, $progress, into: $into);
+        } catch (\Throwable $e) {
+            rescue(fn () => $this->engine()->deleteIndex($into), report: false);
+            throw $e;
+        }
+    }
+
+    /**
+     * Pro synonyms from settings (empty on Lite, which clears any left on the engine).
+     *
+     * @return array<string, list<string>>
+     */
+    public function synonyms(): array
+    {
+        return Plugin::isPro() ? $this->settings->synonymMap() : [];
+    }
+
+    /**
+     * @param  array<string, list<string>>  $groups
+     * @return array<string, list<string>>
+     */
+    public static function mutualSynonyms(array $groups): array
+    {
+        $map = [];
+
+        foreach ($groups as $term => $equivalents) {
+            $words = array_values(array_unique([$term, ...$equivalents]));
+            foreach ($words as $word) {
+                $map[$word] = array_values(array_unique([...($map[$word] ?? []), ...array_diff($words, [$word])]));
+            }
+        }
+
+        return $map;
     }
 
     public function flush(IndexDefinition $index, string $siteHandle): void
     {
-        try {
-            $this->engine()->deleteIndex($this->engineIndex($index, $siteHandle));
-        } catch (ObjectNotFound) {
-            // Typesense: nothing to flush.
+        $engine = $this->engine();
+        $name = $this->engineIndex($index, $siteHandle);
+
+        if ($engine instanceof TypesenseEngine) {
+            TypesenseSchema::drop($engine, $name);
+
+            return;
         }
+
+        $engine->deleteIndex($name);
     }
 
     public function engineIndex(IndexDefinition $index, string $siteHandle): string
