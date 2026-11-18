@@ -1,5 +1,5 @@
 {# Bloodhound harness: Twig search page #}
-{% set results = bloodhound.search('articles', app('request').query('q'), {page: app('request').query('page', 1), perPage: 2}) %}
+{% set results = bloodhound.search('articles', app('request').query('q'), {page: app('request').query('page', 1), perPage: 2, where: app('request').query('section') ? {section: app('request').query('section')} : {}}) %}
 <p id="total">{{ results.total }}</p>
 <p id="pages">{{ results.pages() }}</p>
 <p id="error">{{ results.error ?? '' }}</p>

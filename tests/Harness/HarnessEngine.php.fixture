@@ -72,7 +72,9 @@ class HarnessEngine extends Engine
         $terms = array_filter(preg_split('/\s+/', mb_strtolower($builder->query)));
         $hits = [];
         foreach ($this->load($builder->index ?: $builder->model->searchableAs()) as $doc) {
-            foreach ($builder->wheres as $field => $value) {
+            foreach ($builder->wheres as $key => $where) {
+                // Scout 11: list of ['field' => …, 'operator' => …, 'value' => …]; older: field => value.
+                [$field, $value] = is_array($where) ? [$where['field'], $where['value']] : [$key, $where];
                 if (($doc[$field] ?? null) != $value) {
                     continue 2;
                 }

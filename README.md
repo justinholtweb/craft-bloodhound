@@ -2,7 +2,7 @@
 
 Laravel Scout for Craft elements — index entries, assets, users or products into Meilisearch, Typesense, Algolia or the database driver.
 
-> **Status:** phase 1 (indexes, sync, search from Twig + Blade) working in the Craft 6 harness against Scout's Engine API; live Meilisearch test pending. See [PLAN.md](PLAN.md).
+> **Status:** phase 1 (indexes, sync, search from Twig + Blade) verified against Meilisearch in the Craft 6 harness. See [PLAN.md](PLAN.md).
 
 ## Requirements
 
@@ -35,8 +35,9 @@ documents can never surface disabled, expired or deleted content.
 {{ $results->total }} results, page {{ $results->page }} of {{ $results->pages() }}
 ```
 
-Options: `page`, `perPage` (max 100), `site` (handle), `where` (attribute → value; the attribute must be
-filterable in your engine). If the engine is unreachable, results are empty and `results.error` says why —
+Options: `page`, `perPage` (max 100), `site` (handle), `where` (attribute → value). Filterable attributes are
+`siteId`, `section`, `type` (entries) or `siteId`, `volume`, `kind` (assets); `import` declares them to
+Meilisearch for you. If the engine is unreachable, results are empty and `results.error` says why —
 the page still renders.
 
 ## Editions and pricing

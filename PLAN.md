@@ -23,12 +23,14 @@ engine works unchanged.
   save), `sync-scheduled` for silent go-live/expiry, `import [--fresh]` / `flush`, and one search API for
   Twig and Blade with live-only hydration. `SearchDocument` implements the engine-facing methods itself
   rather than Scout's `Searchable` trait (which registers observers + global collection macros).
-- Verified against Scout's real `Engine` API with a harness-only file engine (27 checks incl. queue,
-  scheduled publishing, stale-document filtering, engine outage). **Meilisearch add-on not yet installed
-  in the harness** — the install was blocked by Claude Code's permission check; needs a run by Justin.
+- **Verified on real Meilisearch** (harness add-on `kevinquillen/ddev-meilisearch`, client
+  `meilisearch/meilisearch-php` 1.17): 30 checks incl. filters, paging, queue, scheduled publishing,
+  stale-document filtering, outage — and the same 30 pass on the harness-only file engine, so the suite
+  is engine-neutral. `import` declares Meilisearch filterable/sortable attributes (`prepare()`); engines
+  without `updateIndexSettings()` skip it.
 - Relations index as the related elements' UI labels, so Wingman/Eloquent elements (no titles) read as
   their names.
-- Open: Meilisearch filterable/sortable attributes pushed at import; Typesense (needs a per-class
+- Open: Typesense (needs a per-class
   collection schema in Scout config); Pro: take over Craft's own search, synonyms, zero-downtime reindex.
 
 ## Phases

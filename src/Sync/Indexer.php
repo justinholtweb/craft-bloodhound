@@ -61,6 +61,7 @@ class Indexer
     public function import(IndexDefinition $index, string $siteHandle, ?\Closure $progress = null, int $chunk = 250): int
     {
         $name = $this->engineIndex($index, $siteHandle);
+        $this->prepare($name, $index);
         $done = 0;
         $offset = 0;
 
@@ -73,6 +74,28 @@ class Indexer
         } while (count($elements) === $chunk);
 
         return $done;
+    }
+
+    /**
+     * Engines that need an index's schema declared up front (Meilisearch: filterable and
+     * sortable attributes) get it here; others ignore it. Without this, `where` filters
+     * fail on Meilisearch.
+     */
+    public function prepare(string $name, IndexDefinition $index): void
+    {
+        $engine = $this->engine();
+
+        if (! method_exists($engine, 'updateIndexSettings')) {
+            return;
+        }
+
+        rescue(fn () => $engine->createIndex($name, ['primaryKey' => 'id']), report: false);
+
+        $filterable = $index->elementType === 'assets' ? ['siteId', 'volume', 'kind'] : ['siteId', 'section', 'type'];
+        $engine->updateIndexSettings($name, [
+            'filterableAttributes' => $filterable,
+            'sortableAttributes' => ['dateUpdated', ...($index->elementType === 'entries' ? ['postDate'] : [])],
+        ]);
     }
 
     public function flush(IndexDefinition $index, string $siteHandle): void
