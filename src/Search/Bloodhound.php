@@ -15,6 +15,8 @@ use JustinHoltWeb\Bloodhound\Sync\Indexer;
 use Laravel\Scout\Builder;
 use Throwable;
 
+use function CraftCms\Cms\t;
+
 /**
  * The template API — `bloodhound.search(...)` in Twig, `$bloodhound->search(...)`
  * in Blade. Hits are re-read through the index's live-only element query, so a
@@ -59,7 +61,8 @@ class Bloodhound
             // An engine outage shows as "no results", never as a broken page.
             Log::warning("Bloodhound search on {$index} failed: {$e->getMessage()}");
 
-            return new SearchResults([], 0, $page, $perPage, $query, $e->getMessage());
+            // Details stay in the log; templates only learn that search is unavailable.
+            return new SearchResults([], 0, $page, $perPage, $query, t('Search is temporarily unavailable.', category: 'bloodhound'));
         }
 
         return new SearchResults($this->hydrate($definition, $site, $ids), $total, $page, $perPage, $query);

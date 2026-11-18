@@ -50,8 +50,14 @@ class Indexes
 
         $query->site($siteHandle);
 
-        if ($index->sources !== []) {
-            $index->elementType === 'assets' ? $query->volume($index->sources) : $query->section($index->sources);
+        if ($index->elementType === 'assets') {
+            if ($index->sources !== []) {
+                $query->volume($index->sources);
+            }
+        } else {
+            // Always constrain to sections: `section('*')` means "any section", which excludes nested
+            // (Matrix) entries. Those can be live while their owner is disabled, so they'd leak.
+            $query->section($index->sources ?: '*');
         }
 
         return $query;

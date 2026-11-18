@@ -27,6 +27,7 @@ final class SearchResults implements Countable, IteratorAggregate
         public readonly int $page,
         public readonly int $perPage,
         public readonly string $query,
+        /** A generic, display-safe message when the engine failed; details are in the log. */
         public readonly ?string $error = null,
     ) {}
 

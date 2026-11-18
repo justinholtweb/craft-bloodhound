@@ -63,7 +63,8 @@ settings "['queueUpdates' => false]"
 cp .env /tmp/bh-env.bak; sed -i '' 's/^SCOUT_DRIVER=.*/SCOUT_DRIVER=meilisearch/' .env; ddev exec "grep -q '^MEILISEARCH_HOST=' .env || true" >/dev/null
 sleep 1
 ok "engine down: search page still 200" "$(curl -sk -o /dev/null -w '%{http_code}' "$U/bh/twig?q=airships")" "200"
-ok "engine down: results are empty with an error" "$(curl -sk "$U/bh/blade?q=airships" | grep -c '<p id="error">[^<]')" "1"
+ok "engine down: results are empty with a generic error" "$(curl -sk "$U/bh/blade?q=airships" | grep -o '<p id="error">[^<]*' | sed 's/<p id="error">//')" "Search is temporarily unavailable."
+ok "engine down: no engine internals in the page" "$(curl -sk "$U/bh/blade?q=airships" | grep -ciE 'meilisearch|exception|class ')" "0"
 ok "engine down: saving an entry still works" "$(entry second-article-2 '$e->setFieldValue("summary", "Queued about airships.");')" "saved"
 cp /tmp/bh-env.bak .env; sleep 1
 
