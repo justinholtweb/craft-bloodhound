@@ -69,6 +69,7 @@
         "sort-packages": true
     },
     "support": {
+        "docs": "https://justinholt.com/plugins/craft-bloodhound/docs",
         "issues": "https://github.com/justinholtweb/craft-bloodhound/issues",
         "source": "https://github.com/justinholtweb/craft-bloodhound"
     },
