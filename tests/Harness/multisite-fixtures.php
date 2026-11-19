@@ -3,6 +3,8 @@
 // Bloodhound harness: a second site, `fr` (French), with the articles section on it,
 // and a French title for "Hello Momentum". Idempotent. Run on a snapshot; restore afterwards.
 // Run with: ddev artisan tinker --execute "require 'storage/bh-multisite-fixtures.php';"
+// Craft 6 beta.1 queues no resave when a section gains a site: if it stops at "did not propagate",
+// run `ddev artisan craft:resave:entries --section=articles`, then this file again.
 
 use CraftCms\Cms\Entry\Elements\Entry;
 use CraftCms\Cms\Section\Data\SectionSiteSettings;
@@ -21,7 +23,7 @@ if (! $fr) {
     $fr->handle = 'fr';
     $fr->language = 'fr-FR';
     $fr->hasUrls = true;
-    $fr->baseUrl = '@web/fr/';
+    $fr->baseUrl = rtrim((string) config('app.url'), '/').'/fr/'; // `@web` isn't resolved in Craft 6 site URLs
     $fr->enabled = true;
     Sites::saveSite($fr) || throw new RuntimeException('site: '.json_encode($fr->errors()->all()));
 }
