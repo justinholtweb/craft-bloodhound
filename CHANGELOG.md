@@ -1,6 +1,12 @@
 # Release Notes for Bloodhound
 
-## 6.0.0-beta.1 - Unreleased
+## 6.0.0-beta.2 - 2026-11-21
+
+### Changed
+- The documentation link (Plugin Store and README) now points at the docs on justinholt.com.
+- The docs FAQ now compares Bloodhound with Caffeine and explains why Holmes can't see its indexes.
+
+## 6.0.0-beta.1 - 2026-11-18
 
 ### Added
 - Search indexes for entries, assets, users and Craft Commerce products, defined in Settings → Bloodhound, kept per site in Meilisearch, Typesense or Algolia through Laravel Scout.
