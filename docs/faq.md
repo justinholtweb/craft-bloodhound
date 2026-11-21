@@ -47,3 +47,22 @@ before it reaches your template.
 
 No. The control panel searches disabled entries and drafts, and the index only holds live
 elements, so CP search stays with Craft.
+
+## Bloodhound or Caffeine?
+
+They solve different search problems, and both run on Craft 6.
+
+- **[Caffeine](https://craft-caffeine.com)** builds a self-contained JSON index from the sections you
+  choose and filters it in the visitor's browser (or in PHP). Faceted listings, such as a product
+  catalogue, a directory or a job board, refine instantly, with no search server to run.
+- **Bloodhound** sends elements to a search server (Meilisearch, Typesense or Algolia) through
+  Laravel Scout. You get typo tolerance, relevance ranking and indexes too large for the browser, and
+  you run or pay for that server.
+
+Many sites want both: Caffeine for a filterable listing page, Bloodhound for the site-wide search box.
+
+## Does Holmes work with Bloodhound?
+
+[Holmes](https://craft-holmes.com) inspects Craft's own search index, on Craft 5. Bloodhound keeps its
+own indexes on the search server, so Holmes can't see them; Bloodhound's
+[index health](index-health) screen does that job instead.
